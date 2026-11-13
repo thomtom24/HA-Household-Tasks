@@ -172,7 +172,7 @@ class Engine:
             )
             active = now >= due
         elif kind == "weekly":
-            slot = now.replace(hour=int(c["hour"]), minute=int(c["minute"]), second=0, microsecond=0)
+            slot = now.replace(hour=0, minute=0, second=0, microsecond=0)
             slot -= timedelta(days=(slot.weekday() - int(c["weekday"])) % 7)
             # The most recent slot is due only once its time has arrived.
             if slot > now:
