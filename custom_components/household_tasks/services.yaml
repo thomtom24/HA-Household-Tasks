@@ -1,0 +1,26 @@
+complete:
+  fields:
+    entry_id:
+      example: "entry_id"
+    task:
+      example: "change_bedding"
+reopen:
+  fields:
+    entry_id:
+      example: "entry_id"
+    task:
+      example: "change_bedding"
+skip:
+  fields:
+    entry_id:
+      example: "entry_id"
+    task:
+      example: "change_bedding"
+snooze:
+  fields:
+    entry_id:
+      example: "entry_id"
+    task:
+      example: "change_bedding"
+    days:
+      example: 1
