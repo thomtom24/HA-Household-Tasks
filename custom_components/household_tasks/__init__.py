@@ -2,10 +2,10 @@
 from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, callback, EVENT_STATE_CHANGED
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.storage import Store
-from homeassistant.helpers.event import async_track_time_interval, async_track_state_change_event
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 from .const import DOMAIN, PLATFORMS, DEFAULTS
 
@@ -41,7 +41,7 @@ class Engine:
     async def start(self):
         self.history = await self.store.async_load() or {}
         self.unsub_timer = async_track_time_interval(self.hass, self._tick, timedelta(minutes=1))
-        self.unsub_states = async_track_state_change_event(self.hass, None, self._state_event)
+        self.unsub_states = self.hass.bus.async_listen(EVENT_STATE_CHANGED, self._state_event)
         for name in ("complete", "reopen", "skip", "snooze"):
             self.hass.services.async_register(DOMAIN, name, getattr(self, "_service_" + name))
         self.publish_open_tasks()
