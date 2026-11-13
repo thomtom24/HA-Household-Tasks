@@ -188,7 +188,7 @@ class Engine:
             entity = self.hass.states.get(c.get("trigger_entity", ""))
             value = entity.state if entity else None
             active = (compare(value, c["operator"], c["threshold"]) if kind == "numeric"
-                      else value == c["trigger_state"])
+                      else value == c["trigger_state"] and value not in (None, "unknown", "unavailable", ""))
             token = "entity:" + str(c.get("trigger_entity"))
             if active:
                 due = now
@@ -215,7 +215,7 @@ class Engine:
         if "calendar_end" in rule:
             return calendar_end is not None and now >= calendar_end
         entity = self.hass.states.get(c.get("close_entity", ""))
-        if not entity:
+        if not entity or entity.state in ("unknown", "unavailable", ""):
             return False
         if "entity_numeric" in rule:
             return compare(entity.state, c["close_operator"], c["close_threshold"])
