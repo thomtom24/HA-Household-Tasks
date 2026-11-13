@@ -5,7 +5,8 @@ from pathlib import Path
 from datetime import datetime, timedelta, time as datetime_time
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.components.http import StaticPathConfig
-from homeassistant.const import EVENT_STATE_CHANGED, EVENT_ENTITY_REGISTRY_UPDATED
+from homeassistant.const import EVENT_STATE_CHANGED
+from homeassistant.helpers.entity_registry import EVENT_ENTITY_REGISTRY_UPDATED
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.event import async_track_time_interval
