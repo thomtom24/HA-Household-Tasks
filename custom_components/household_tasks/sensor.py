@@ -23,6 +23,7 @@ class TaskStatusSensor(SensorEntity):
             "task_entry_id": self.entry.entry_id,
             "friendly_name": c.get("friendly_name") or self.entry.title,
             "category": c.get("category"), "area_id": c.get("area_id"),
+            "trigger_type": c.get("trigger_type"),
             "close_type": c.get("close_type", "manual"),
             "manual_completion_allowed": c.get("close_type", "manual") == "manual" or c.get("close_type", "").startswith("manual_or_"),
             "due": s.get("due"), "due_at_open": s.get("due_at_open"), "last_completed": s.get("last_completed"),
