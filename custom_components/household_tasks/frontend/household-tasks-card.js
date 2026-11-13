@@ -13,12 +13,31 @@ class HouseholdTasksCard extends HTMLElement {
         manualAllowed:s.attributes.manual_completion_allowed === true || (s.attributes.manual_completion_allowed == null && (!s.attributes.close_type || s.attributes.close_type === "manual" || s.attributes.close_type.startsWith("manual_or_")))}));
     const upcoming = tasks.filter(t => t.state === 'closed' && t.due && new Date(t.due) > new Date());
     const visible = this.filter === 'upcoming' ? upcoming : tasks.filter(t=>t.state === 'open');
+    const formatDateTime = date => {
+      const locale = this._hass.locale || {};
+      const language = locale.language || this._hass.language || navigator.language || 'en-GB';
+      const configuredOrder = String(locale.date_format || '').toUpperCase();
+      const order = ['DMY', 'MDY', 'YMD'].includes(configuredOrder) ? configuredOrder : null;
+      const parts = new Intl.DateTimeFormat(language, {year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date);
+      const fields = Object.fromEntries(parts.filter(p => ['day','month','year'].includes(p.type)).map(p => [p.type,p.value]));
+      const datePart = order === 'DMY' ? [fields.day,fields.month,fields.year].join('/') :
+        order === 'MDY' ? [fields.month,fields.day,fields.year].join('/') :
+        order === 'YMD' ? [fields.year,fields.month,fields.day].join('-') :
+        new Intl.DateTimeFormat(language,{year:'numeric',month:'2-digit',day:'2-digit'}).format(date);
+      const hour12 = locale.time_format === '12';
+      const hour24 = locale.time_format === '24';
+      const timePart = new Intl.DateTimeFormat(language,{
+        hour:'numeric',minute:'2-digit',
+        ...(hour12 || hour24 ? {hour12:hour12} : {})
+      }).format(date);
+      return datePart + ', ' + timePart;
+    };
     const dueInfo = t => {
       const raw = t.state === 'open' ? (t.dueAtOpen || t.opened) : t.due;
       if (!raw) return '';
       const date = new Date(raw);
       if (Number.isNaN(date.getTime())) return '';
-      if (t.state !== 'open') return 'Due: ' + date.toLocaleString();
+      if (t.state !== 'open') return 'Due: ' + formatDateTime(date);
       const scheduled = Boolean(t.dueAtOpen);
       const label = scheduled ? 'Due: ' : 'Opened: ';
       const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -28,7 +47,7 @@ class HouseholdTasksCard extends HTMLElement {
         Date.UTC(start.getFullYear(), start.getMonth(), start.getDate())) / 86400000);
       const overdue = scheduled ? (days > 0 ? ' · ' + days + (days === 1 ? ' day overdue' : ' days overdue') :
         days === 0 ? ' · Due today' : '') : '';
-      return label + date.toLocaleString() + overdue;
+      return label + formatDateTime(date) + overdue;
     };
     const esc = x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     this.shadowRoot.innerHTML = `<ha-card><div class="wrap"><h2>${esc(this.config.title || 'Household Tasks')}</h2>
