@@ -7,17 +7,34 @@ class HouseholdTasksCard extends HTMLElement {
     if (!this.shadowRoot) this.attachShadow({mode:'open'});
     const tasks = Object.entries(this._hass.states)
       .filter(([id,s]) => id.startsWith('sensor.') && s.attributes.task_entry_id && id.endsWith('_status'))
-      .map(([id,s]) => ({id, name:(s.attributes.friendly_name || id).replace(/\s+status$/i, ''), due:s.attributes.due,
+      .map(([id,s]) => ({id, name:(s.attributes.friendly_name || id).replace(/\s+status$/i, ''), due:s.attributes.due, dueAtOpen:s.attributes.due_at_open, opened:s.attributes.last_opened,
         entry:s.attributes.task_entry_id, state:s.state, category:s.attributes.category,
         manualAllowed:s.attributes.manual_completion_allowed === true || (s.attributes.manual_completion_allowed == null && (!s.attributes.close_type || s.attributes.close_type === "manual" || s.attributes.close_type.startsWith("manual_or_")))}));
     const upcoming = tasks.filter(t => t.state === 'closed' && t.due && new Date(t.due) > new Date());
     const visible = this.filter === 'upcoming' ? upcoming : tasks.filter(t=>t.state === 'open');
+    const dueInfo = t => {
+      const raw = t.state === 'open' ? (t.dueAtOpen || t.opened) : t.due;
+      if (!raw) return '';
+      const date = new Date(raw);
+      if (Number.isNaN(date.getTime())) return '';
+      if (t.state !== 'open') return 'Due: ' + date.toLocaleString();
+      const scheduled = Boolean(t.dueAtOpen);
+      const label = scheduled ? 'Due: ' : 'Opened: ';
+      const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const today = new Date();
+      const currentDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const days = Math.round((Date.UTC(currentDay.getFullYear(), currentDay.getMonth(), currentDay.getDate()) -
+        Date.UTC(start.getFullYear(), start.getMonth(), start.getDate())) / 86400000);
+      const overdue = scheduled ? (days > 0 ? ' · ' + days + (days === 1 ? ' day overdue' : ' days overdue') :
+        days === 0 ? ' · Due today' : '') : '';
+      return label + date.toLocaleString() + overdue;
+    };
     const esc = x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     this.shadowRoot.innerHTML = `<ha-card><div class="wrap"><h2>${esc(this.config.title || 'Household Tasks')}</h2>
       <div class="tabs"><button data-tab="open">Open (${tasks.filter(t=>t.state==='open').length})</button>
       <button data-tab="upcoming">Upcoming (${upcoming.length})</button></div>
       ${visible.length ? visible.map(t=>`<div class="task"><div><b>${esc(t.name)}</b><small>${esc(t.category||'')}
-      ${t.due?' · '+esc(new Date(t.due).toLocaleString()):''}</small></div>
+      ${dueInfo(t)?' · '+esc(dueInfo(t)):''}</small></div>
       ${t.state==='open' && t.manualAllowed?`<button data-complete="${esc(t.entry)}">✓ Done</button>`:''}</div>`).join(''):'<p>No tasks in this view.</p>'}
       </div></ha-card><style>.wrap{padding:16px}h2{margin:0 0 16px;font-size:20px}
       .tabs{display:flex;gap:8px;margin-bottom:12px}.tabs button,.task button{border:1px solid var(--divider-color);

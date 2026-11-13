@@ -1,4 +1,4 @@
-"""Task status and Alexa-friendly aggregate sensor."""
+"""Task status sensors for Home Assistant."""
 from homeassistant.components.sensor import SensorEntity
 from .const import DOMAIN
 
@@ -25,7 +25,7 @@ class TaskStatusSensor(SensorEntity):
             "category": c.get("category"), "area_id": c.get("area_id"),
             "close_type": c.get("close_type", "manual"),
             "manual_completion_allowed": c.get("close_type", "manual") == "manual" or c.get("close_type", "").startswith("manual_or_"),
-            "due": s.get("due"), "last_completed": s.get("last_completed"),
+            "due": s.get("due"), "due_at_open": s.get("due_at_open"), "last_completed": s.get("last_completed"),
             "last_opened": s.get("last_opened"), "history": s.get("events", [])[-20:],
         }
 
