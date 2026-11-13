@@ -38,6 +38,7 @@ class Engine:
         self.lock = asyncio.Lock()
         self.unsub_timer = None
         self.unsub_states = None
+        self.calendar_cache = {}
 
     async def start(self):
         self.history = await self.store.async_load() or {}
@@ -86,6 +87,65 @@ class Engine:
         s.setdefault("events", []).append({"action": action, "at": now.isoformat()})
         s["events"] = s["events"][-100:]
 
+    async def calendar_events(self, entity_id, now):
+        """Fetch all calendar events, not just the next entity attribute event."""
+        cached = self.calendar_cache.get(entity_id)
+        if cached and now - cached[0] < timedelta(minutes=5):
+            return cached[1]
+        if not self.hass.services.has_service("calendar", "get_events"):
+            return None
+        try:
+            response = await self.hass.services.async_call(
+                "calendar", "get_events",
+                {"entity_id": entity_id,
+                 "start_date_time": (now - timedelta(days=3)).isoformat(),
+                 "end_date_time": (now + timedelta(days=90)).isoformat()},
+                blocking=True, return_response=True,
+            )
+            events = response.get(entity_id, {}).get("events", [])
+            self.calendar_cache[entity_id] = (now, events)
+            return events
+        except Exception:
+            # Do not discard known events because of a transient calendar error.
+            return cached[1] if cached else None
+
+    async def calculate_calendar(self, entry, now):
+        c, s = self.conf(entry), self.state(entry)
+        entity_id = c.get("trigger_entity", "")
+        events = await self.calendar_events(entity_id, now)
+        if events is None:
+            return None, None, False, None
+        match = str(c.get("calendar_match", "")).casefold().strip()
+        offset = timedelta(hours=int(c.get("calendar_offset_hours", 24)))
+        candidates = []
+        for event in events:
+            title = str(event.get("summary") or event.get("message") or "")
+            if match and match not in title.casefold():
+                continue
+            start = parse_dt(event.get("start"))
+            end = parse_dt(event.get("end"))
+            if not start:
+                continue
+            token = "calendar:" + start.isoformat() + ":" + title
+            candidates.append((start - offset, token, start, end))
+        candidates.sort(key=lambda item: item[0])
+        # Keep an open task tied to its original event, even when the
+        # calendar starts advertising a later collection.
+        if s.get("open"):
+            current = next((item for item in candidates if item[1] == s.get("active_token")), None)
+            if current:
+                due, token, _, end = current
+                return due, token, now >= due and (end is None or now < end), end
+            end = parse_dt(s.get("calendar_end"))
+            if end:
+                return parse_dt(s.get("due_at_open")), s.get("active_token"), False, end
+        # Do not reopen a completed occurrence. Select the next matching event.
+        for due, token, start, end in candidates:
+            if token == s.get("completed_token") or (end is not None and end <= now):
+                continue
+            return due, token, now >= due, end
+        return None, None, False, None
+
     def calculate(self, entry, now):
         c, s = self.conf(entry), self.state(entry)
         kind = c["trigger_type"]
@@ -120,18 +180,6 @@ class Engine:
                 due = date - timedelta(days=int(c["offset_days"]))
                 token = "date:" + date.isoformat()
                 active = now >= due
-        elif kind == "calendar":
-            entity = self.hass.states.get(c.get("trigger_entity", ""))
-            if entity:
-                attrs = entity.attributes
-                summary = str(attrs.get("message") or attrs.get("summary") or "")
-                match = str(c.get("calendar_match", "")).lower().strip()
-                start = parse_dt(attrs.get("start_time"))
-                end = parse_dt(attrs.get("end_time"))
-                if start and (not match or match in summary.lower()):
-                    due = start - timedelta(hours=int(c["calendar_offset_hours"]))
-                    token = "calendar:" + start.isoformat() + ":" + summary
-                    active = now >= due and (end is None or now < end)
         elif kind in ("numeric", "state"):
             entity = self.hass.states.get(c.get("trigger_entity", ""))
             value = entity.state if entity else None
@@ -162,7 +210,10 @@ class Engine:
         async with self.lock:
             now = dt_util.now()
             s = self.state(entry)
-            due, token, active, end = self.calculate(entry, now)
+            if self.conf(entry)["trigger_type"] == "calendar":
+                due, token, active, end = await self.calculate_calendar(entry, now)
+            else:
+                due, token, active, end = self.calculate(entry, now)
             old = dict(s)
             s["due"] = due.isoformat() if due else None
             if end is not None:
@@ -178,13 +229,13 @@ class Engine:
             snoozed = bool(s.get("snooze_until"))
             if s.get("open") and self.close_condition(entry, now, end):
                 self._finish(s, now, "auto_completed")
-                if token:
-                    s["completed_token"] = token
+                if s.get("active_token"):
+                    s["completed_token"] = s["active_token"]
             if self.conf(entry)["trigger_type"] == "calendar" and end and now >= end:
                 if s.get("open"):
                     self._finish(s, now, "expired")
-                if token:
-                    s["completed_token"] = token
+                if s.get("active_token"):
+                    s["completed_token"] = s["active_token"]
                 s["calendar_end"] = None
             if not s.get("open") and active and not snoozed and token != s.get("completed_token"):
                 if self.conf(entry)["trigger_type"] not in ("numeric", "state") or not s.get("latched"):
@@ -276,6 +327,8 @@ class Engine:
         for entry in list(self.entries.values()):
             c = self.conf(entry)
             if entity_id in (c.get("trigger_entity"), c.get("close_entity")):
+                if c.get("trigger_type") == "calendar":
+                    self.calendar_cache.pop(entity_id, None)
                 self.hass.async_create_task(self.evaluate(entry))
 
 async def async_setup(hass: HomeAssistant, config):
