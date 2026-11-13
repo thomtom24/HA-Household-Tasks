@@ -1,0 +1,69 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add household task",
+        "data": {
+          "name": "Internal name",
+          "friendly_name": "Friendly name",
+          "category": "Category",
+          "area_id": "Area (optional)",
+          "pause_in_holiday_mode": "Pause during holiday mode",
+          "pause_entities": "Entities that pause this task",
+          "trigger_type": "Opening trigger",
+          "interval_days": "Days since completion",
+          "weekday": "Weekday (Monday = 0)",
+          "hour": "Hour",
+          "minute": "Minute",
+          "trigger_entity": "Trigger entity",
+          "trigger_state": "Trigger state",
+          "threshold": "Trigger threshold",
+          "operator": "Trigger comparison",
+          "offset_days": "Days before date",
+          "calendar_offset_hours": "Hours before calendar event",
+          "calendar_match": "Calendar event text filter",
+          "close_type": "Closing rule",
+          "close_entity": "Closing entity",
+          "close_state": "Closing state",
+          "close_threshold": "Closing threshold",
+          "close_operator": "Closing comparison"
+        }
+      }
+    },
+    "error": {
+      "invalid_name": "Invalid task name"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Edit task",
+        "data": {
+          "name": "Internal name",
+          "friendly_name": "Friendly name",
+          "category": "Category",
+          "area_id": "Area (optional)",
+          "pause_in_holiday_mode": "Pause during holiday mode",
+          "pause_entities": "Pause entities",
+          "trigger_type": "Opening trigger",
+          "interval_days": "Days since completion",
+          "weekday": "Weekday",
+          "hour": "Hour",
+          "minute": "Minute",
+          "trigger_entity": "Trigger entity",
+          "trigger_state": "Trigger state",
+          "threshold": "Threshold",
+          "operator": "Comparison",
+          "offset_days": "Days before date",
+          "calendar_offset_hours": "Hours before event",
+          "calendar_match": "Event text filter",
+          "close_type": "Closing rule",
+          "close_entity": "Closing entity",
+          "close_state": "Closing state",
+          "close_threshold": "Closing threshold",
+          "close_operator": "Closing comparison"
+        }
+      }
+    }
+  }
+}
