@@ -21,15 +21,18 @@
         "data": {
           "interval_days": "Days after last completion",
           "weekday": "Weekday (Monday = 0)",
-          "hour": "Hour (0–23)",
-          "minute": "Minute (0–59)",
+          "hour": "Hour (24-hour clock)",
+          "minute": "Minute",
           "trigger_entity": "Trigger entity",
           "trigger_state": "Trigger state",
           "threshold": "Threshold",
           "operator": "Comparison",
           "offset_days": "Days before date",
           "calendar_offset_hours": "Hours before calendar event",
-          "calendar_match": "Calendar event text filter (optional)"
+          "calendar_match": "Calendar event text filter (optional)",
+          "schedule_interval": "Repeat every (years)",
+          "year_month": "Month",
+          "month_day": "Day of month"
         }
       },
       "close_choice": {
@@ -79,15 +82,18 @@
         "data": {
           "interval_days": "Days after last completion",
           "weekday": "Weekday (Monday = 0)",
-          "hour": "Hour (0–23)",
-          "minute": "Minute (0–59)",
+          "hour": "Hour (24-hour clock)",
+          "minute": "Minute",
           "trigger_entity": "Trigger entity",
           "trigger_state": "Trigger state",
           "threshold": "Threshold",
           "operator": "Comparison",
           "offset_days": "Days before date",
           "calendar_offset_hours": "Hours before calendar event",
-          "calendar_match": "Calendar event text filter (optional)"
+          "calendar_match": "Calendar event text filter (optional)",
+          "schedule_interval": "Repeat every (years)",
+          "year_month": "Month",
+          "month_day": "Day of month"
         }
       },
       "close_choice": {
