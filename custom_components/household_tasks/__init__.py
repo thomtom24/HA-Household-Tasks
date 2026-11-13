@@ -171,7 +171,7 @@ class Engine:
             now = dt_util.now()
             s = self.state(entry)
             due, token, active, end = self.calculate(entry, now)
-            old = (s.get("open"), s.get("active_token"), s.get("due"))
+            old = (s.get("open"), s.get("active_token"), s.get("due"), s.get("latched"), s.get("completed_token"))
             s["due"] = due.isoformat() if due else None
             s["next_token"] = token
             paused = self.is_paused(entry)
@@ -196,8 +196,10 @@ class Engine:
                     if self.conf(entry)["trigger_type"] in ("numeric", "state"):
                         s["latched"] = True
             if not active and self.conf(entry)["trigger_type"] in ("numeric", "state"):
+                # A fresh inactive state rearms the next activation cycle.
                 s["latched"] = False
-            new = (s.get("open"), s.get("active_token"), s.get("due"))
+                s["completed_token"] = None
+            new = (s.get("open"), s.get("active_token"), s.get("due"), s.get("latched"), s.get("completed_token"))
             if old != new:
                 await self.save()
                 self.notify(entry.entry_id)
