@@ -2,7 +2,8 @@
 from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta
-from homeassistant.core import HomeAssistant, callback, EVENT_STATE_CHANGED
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.event import async_track_time_interval
