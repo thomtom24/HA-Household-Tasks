@@ -5,7 +5,7 @@ from homeassistant import config_entries
 from homeassistant.helpers import selector
 from .const import DOMAIN, DEFAULTS
 
-TRIGGERS = ["completion", "weekly", "calendar", "date_entity", "numeric", "state"]
+TRIGGERS = ["completion", "weekly", "monthly", "yearly", "calendar", "date_entity", "numeric", "state"]
 CLOSES = ["manual", "entity_state", "entity_numeric", "calendar_end",
           "manual_or_entity_state", "manual_or_entity_numeric", "manual_or_calendar_end",
           "trigger_inactive", "manual_or_trigger_inactive"]
@@ -13,6 +13,8 @@ CLOSES = ["manual", "entity_state", "entity_numeric", "calendar_end",
 TRIGGER_LABELS = {
     "completion": "Time since last completion",
     "weekly": "Weekly schedule",
+    "monthly": "Monthly schedule",
+    "yearly": "Yearly schedule",
     "calendar": "Calendar event",
     "date_entity": "Date from an entity",
     "numeric": "Numeric sensor threshold",
@@ -60,6 +62,13 @@ def trigger_schema(d):
     if kind == "completion":
         s[field("interval_days", d.get("interval_days", 14))] = vol.All(vol.Coerce(int), vol.Range(min=1, max=3650))
         s[field("first_due_date", d.get("first_due_date"), False)] = selector.DateSelector()
+    elif kind in ("monthly", "yearly"):
+        s[field("schedule_interval", d.get("schedule_interval", 1))] = vol.All(vol.Coerce(int), vol.Range(min=1, max=120))
+        if kind == "yearly":
+            s[field("year_month", d.get("year_month", 1))] = vol.All(vol.Coerce(int), vol.Range(min=1, max=12))
+        s[field("month_day", d.get("month_day", 1))] = vol.All(vol.Coerce(int), vol.Range(min=1, max=31))
+        s[field("hour", d.get("hour", 9))] = vol.All(vol.Coerce(int), vol.Range(min=0, max=23))
+        s[field("minute", d.get("minute", 0))] = vol.All(vol.Coerce(int), vol.Range(min=0, max=59))
     elif kind == "weekly":
         s[field("weekday", d.get("weekday", 0))] = vol.All(vol.Coerce(int), vol.Range(min=0, max=6))
         s[field("hour", d.get("hour", 9))] = vol.All(vol.Coerce(int), vol.Range(min=0, max=23))
