@@ -27,6 +27,8 @@ class TaskStatusSensor(SensorEntity):
             "manual_completion_allowed": c.get("close_type", "manual") == "manual" or c.get("close_type", "").startswith("manual_or_"),
             "due": s.get("due"), "due_at_open": s.get("due_at_open"), "last_completed": s.get("last_completed"),
             "last_opened": s.get("last_opened"), "history": s.get("events", [])[-20:],
+            "entity_warnings": s.get("entity_warnings", []),
+            "has_entity_warning": bool(s.get("entity_warnings")),
         }
 
     async def async_added_to_hass(self):
