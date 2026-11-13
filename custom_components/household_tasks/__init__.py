@@ -1,7 +1,7 @@
 """Persistent task scheduler for Household Tasks."""
 from __future__ import annotations
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as datetime_time
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.config_entries import ConfigEntry
@@ -99,15 +99,17 @@ class Engine:
         elif kind == "weekly":
             slot = now.replace(hour=int(c["hour"]), minute=int(c["minute"]), second=0, microsecond=0)
             slot -= timedelta(days=(slot.weekday() - int(c["weekday"])) % 7)
+            # The most recent slot is due only once its time has arrived.
             if slot > now:
                 slot -= timedelta(days=7)
+            previous_token = "weekly:" + slot.isoformat()
+            if s.get("completed_token") == previous_token:
+                slot += timedelta(days=7)
+            elif s.get("last_completed") is None and parse_dt(s["created"]) > slot:
+                slot += timedelta(days=7)
             due = slot
             token = "weekly:" + slot.isoformat()
-            active = True
-            if s.get("completed_token") == token:
-                due = slot + timedelta(days=7)
-                token = "weekly:" + due.isoformat()
-                active = False
+            active = now >= slot
         elif kind == "date_entity":
             entity = self.hass.states.get(c.get("trigger_entity", ""))
             raw = entity.state if entity else None
@@ -161,7 +163,7 @@ class Engine:
             now = dt_util.now()
             s = self.state(entry)
             due, token, active, end = self.calculate(entry, now)
-            old = (s.get("open"), s.get("active_token"), s.get("due"), s.get("latched"), s.get("completed_token"))
+            old = dict(s)
             s["due"] = due.isoformat() if due else None
             s["next_token"] = token
             if s.get("snooze_until") and (parse_dt(s["snooze_until"]) or now) <= now:
@@ -185,11 +187,11 @@ class Engine:
                     if self.conf(entry)["trigger_type"] in ("numeric", "state"):
                         s["latched"] = True
             if not active and self.conf(entry)["trigger_type"] in ("numeric", "state"):
-                # A fresh inactive state rearms the next activation cycle.
-                s["latched"] = False
-                s["completed_token"] = None
-            new = (s.get("open"), s.get("active_token"), s.get("due"), s.get("latched"), s.get("completed_token"))
-            if old != new:
+                source = self.hass.states.get(self.conf(entry).get("trigger_entity", ""))
+                if source is not None and source.state not in ("unknown", "unavailable"):
+                    s["latched"] = False
+                    s["completed_token"] = None
+            if old != s:
                 await self.save()
                 self.notify(entry.entry_id)
 
@@ -205,6 +207,9 @@ class Engine:
             raise ValueError("Unknown task entry")
         async with self.lock:
             s, now = self.state(entry), dt_util.now()
+            close_type = self.conf(entry)["close_type"]
+            if action == "complete" and not (close_type == "manual" or close_type.startswith("manual_or_")):
+                raise ValueError("This task is configured for automatic completion only")
             if action in ("complete", "skip"):
                 if not s.get("open"):
                     return
@@ -220,6 +225,8 @@ class Engine:
             elif action == "snooze":
                 if not s.get("open"):
                     return
+                if days < 1:
+                    raise ValueError("Snooze days must be positive")
                 s["open"] = False
                 s["snooze_until"] = (now + timedelta(days=days)).isoformat()
                 self.record(s, "snoozed", now)
