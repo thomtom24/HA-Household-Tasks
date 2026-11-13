@@ -190,6 +190,7 @@ class Engine:
                 if self.conf(entry)["trigger_type"] not in ("numeric", "state") or not s.get("latched"):
                     s["open"] = True
                     s["last_opened"] = now.isoformat()
+                    s["due_at_open"] = due.isoformat() if due else None
                     s["active_token"] = token
                     self.record(s, "opened", now)
                     if self.conf(entry)["trigger_type"] in ("numeric", "state"):
@@ -229,6 +230,7 @@ class Engine:
                 s["completed_token"] = None
                 s["latched"] = True
                 s["last_opened"] = now.isoformat()
+                s["due_at_open"] = s.get("due")
                 self.record(s, "reopened", now)
             elif action == "snooze":
                 if not s.get("open"):
