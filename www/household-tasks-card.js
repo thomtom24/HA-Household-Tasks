@@ -7,7 +7,7 @@ class HouseholdTasksCard extends HTMLElement {
     if (!this.shadowRoot) this.attachShadow({mode:'open'});
     const tasks = Object.entries(this._hass.states)
       .filter(([id,s]) => id.startsWith('sensor.') && s.attributes.task_entry_id && id.endsWith('_status'))
-      .map(([id,s]) => ({id, name:s.attributes.friendly_name || id, due:s.attributes.due,
+      .map(([id,s]) => ({id, name:(s.attributes.friendly_name || id).replace(/\s+status$/i, ''), due:s.attributes.due,
         entry:s.attributes.task_entry_id, state:s.state, category:s.attributes.category}));
     const upcoming = tasks.filter(t => t.state === 'closed' && t.due && new Date(t.due) > new Date());
     const visible = this.filter === 'upcoming' ? upcoming : tasks.filter(t=>t.state === 'open');
