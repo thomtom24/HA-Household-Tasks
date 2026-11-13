@@ -58,20 +58,10 @@ class Engine:
     def conf(self, entry):
         return {**DEFAULTS, **entry.data, **entry.options}
 
-    def is_paused(self, entry):
-        c = self.conf(entry)
-        if not c.get("pause_in_holiday_mode"):
-            return False
-        entities = c.get("pause_entities") or []
-        if isinstance(entities, str):
-            entities = [entities]
-        return any(self.hass.states.get(e) is not None and
-                   self.hass.states.get(e).state == "on" for e in entities)
-
     def publish_open_tasks(self):
         names = sorted((self.conf(e).get("friendly_name") or e.title
                         for e in self.entries.values()
-                        if self.state(e).get("open") and not self.is_paused(e)), key=str.casefold)
+                        if self.state(e).get("open")), key=str.casefold)
         if not names:
             announcement = "There are no outstanding household tasks."
         elif len(names) == 1:
@@ -174,15 +164,14 @@ class Engine:
             old = (s.get("open"), s.get("active_token"), s.get("due"), s.get("latched"), s.get("completed_token"))
             s["due"] = due.isoformat() if due else None
             s["next_token"] = token
-            paused = self.is_paused(entry)
             if s.get("snooze_until") and (parse_dt(s["snooze_until"]) or now) <= now:
                 s["snooze_until"] = None
             snoozed = bool(s.get("snooze_until"))
-            if s.get("open") and not paused and self.close_condition(entry, now, end):
+            if s.get("open") and self.close_condition(entry, now, end):
                 self._finish(s, now, "auto_completed")
                 if token:
                     s["completed_token"] = token
-            if not paused and self.conf(entry)["trigger_type"] == "calendar" and end and now >= end:
+            if self.conf(entry)["trigger_type"] == "calendar" and end and now >= end:
                 if s.get("open"):
                     self._finish(s, now, "expired")
                 if token:
