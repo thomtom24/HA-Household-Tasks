@@ -31,7 +31,7 @@ title: Household Tasks
 
 **Why is resource setup manual?** The integration serves the card but deliberately does not modify dashboard resource settings automatically. You only need to register the URL once; later HACS updates replace the bundled file.
 
-## Alexa
+## Using the open task list in automations
 Use:
 ```jinja2
 {{ state_attr('sensor.household_tasks_open_names', 'announcement') }}
@@ -42,7 +42,7 @@ Or retrieve the list:
 ```
 
 ## v0.2.3 change
-- Removed holiday-mode pausing from task configuration, scheduling, status sensors and Alexa task list filtering. Existing tasks retain their open/closed state and recurrence history. Previously saved pause settings are ignored; editing a task removes them from its options.
+- Removed holiday-mode pausing from task configuration, scheduling, status sensors and task-list filtering. Existing tasks retain their open/closed state and recurrence history. Previously saved pause settings are ignored; editing a task removes them from its options.
 
 ## Important limitations
 - Calendar lookahead uses Home Assistant's calendar.get_events service; test with your calendar provider before relying on reminders.
