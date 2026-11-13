@@ -63,16 +63,15 @@ def trigger_schema(d):
         s[field("interval_days", d.get("interval_days", 14))] = vol.All(vol.Coerce(int), vol.Range(min=1, max=3650))
         s[field("first_due_date", d.get("first_due_date"), False)] = selector.DateSelector()
     elif kind in ("monthly", "yearly"):
-        s[field("schedule_interval", d.get("schedule_interval", 1))] = vol.All(vol.Coerce(int), vol.Range(min=1, max=120))
         if kind == "yearly":
-            s[field("year_month", d.get("year_month", 1))] = vol.All(vol.Coerce(int), vol.Range(min=1, max=12))
-        s[field("month_day", d.get("month_day", 1))] = vol.All(vol.Coerce(int), vol.Range(min=1, max=31))
-        s[field("hour", d.get("hour", 9))] = vol.All(vol.Coerce(int), vol.Range(min=0, max=23))
-        s[field("minute", d.get("minute", 0))] = vol.All(vol.Coerce(int), vol.Range(min=0, max=59))
+            s[field("schedule_interval", d.get("schedule_interval", 1))] = selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=120, step=1, mode=selector.NumberSelectorMode.BOX))
+            s[field("year_month", d.get("year_month", 1))] = selector.SelectSelector(selector.SelectSelectorConfig(
+                options=[selector.SelectOptionDict(value=str(m), label=label) for m, label in enumerate(
+                    ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"), 1)],
+                mode=selector.SelectSelectorMode.DROPDOWN))
+        s[field("month_day", d.get("month_day", 1))] = selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=31, step=1, mode=selector.NumberSelectorMode.BOX))
     elif kind == "weekly":
         s[field("weekday", d.get("weekday", 0))] = vol.All(vol.Coerce(int), vol.Range(min=0, max=6))
-        s[field("hour", d.get("hour", 9))] = vol.All(vol.Coerce(int), vol.Range(min=0, max=23))
-        s[field("minute", d.get("minute", 0))] = vol.All(vol.Coerce(int), vol.Range(min=0, max=59))
     elif kind == "calendar":
         s[field("trigger_entity", d.get("trigger_entity", ""))] = selector.EntitySelector(selector.EntitySelectorConfig(domain="calendar"))
         s[field("calendar_offset_hours", d.get("calendar_offset_hours", 24))] = vol.All(vol.Coerce(int), vol.Range(min=0, max=720))
@@ -137,6 +136,11 @@ class TaskSteps:
     async def async_step_trigger_settings(self, user_input=None):
         if user_input is not None:
             self.values.update(user_input)
+            if self.values.get("trigger_type") in ("weekly", "monthly", "yearly"):
+                self.values["hour"] = 0
+                self.values["minute"] = 0
+            if self.values.get("trigger_type") == "monthly":
+                self.values["schedule_interval"] = 1
             return await self.async_step_close_choice()
         return self.async_show_form(step_id="trigger_settings", data_schema=trigger_schema(self.values))
 
