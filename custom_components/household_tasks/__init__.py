@@ -157,9 +157,11 @@ class Engine:
         due = token = end = None
         active = False
         if kind == "completion":
-            base = parse_dt(s.get("last_completed")) or parse_dt(s["created"]) or now
-            due = base + timedelta(days=int(c["interval_days"]))
-            token = "completion:" + base.isoformat()
+            completed = parse_dt(s.get("last_completed"))
+            base = completed or parse_dt(s["created"]) or now
+            first_due = parse_dt(c.get("first_due_date")) if not completed else None
+            due = first_due or (base + timedelta(days=int(c["interval_days"])))
+            token = "completion:" + (base.isoformat() if completed or not first_due else "initial:" + first_due.isoformat())
             active = now >= due
         elif kind == "weekly":
             slot = now.replace(hour=int(c["hour"]), minute=int(c["minute"]), second=0, microsecond=0)
