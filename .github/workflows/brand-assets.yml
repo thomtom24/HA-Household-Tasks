@@ -1,0 +1,36 @@
+name: Generate Home Assistant brand assets
+on:
+  push:
+    branches: [main]
+    paths:
+      - branding/icon.svg
+      - .github/workflows/brand-assets.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SVG converter
+        run: python -m pip install cairosvg
+      - name: Generate PNG icons
+        run: |
+          python - <<'PY'
+          import cairosvg
+          from pathlib import Path
+          folder = Path("custom_components/household_tasks/brand")
+          folder.mkdir(parents=True, exist_ok=True)
+          for name, size in (("icon.png",256), ("icon@2x.png",512), ("logo.png",256)):
+              cairosvg.svg2png(url="branding/icon.svg", write_to=str(folder/name), output_width=size, output_height=size)
+          PY
+      - name: Commit generated assets
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/household_tasks/brand/
+          if ! git diff --cached --quiet; then
+            git commit -m "Generate Home Assistant local branding PNGs"
+            git push
+          fi
