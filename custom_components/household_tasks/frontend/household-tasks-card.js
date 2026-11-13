@@ -1,5 +1,5 @@
 class HouseholdTasksCard extends HTMLElement {
-  setConfig(config) { this.config = config; this.filter = this.filter || 'open'; this.upcomingRange = this.upcomingRange || '14'; this.render(); }
+  setConfig(config) { this.config = config; this.filter = this.filter || 'open'; this.upcomingRange = this.upcomingRange || 'all'; this.render(); }
   set hass(hass) { this._hass = hass; this.render(); }
   getCardSize() { return 5; }
   render() {
