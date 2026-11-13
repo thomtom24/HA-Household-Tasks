@@ -15,7 +15,7 @@ def fixed_schedule(now, config, created, completed_token=None):
     if not 1 <= interval <= 120:
         raise ValueError("Schedule interval must be between 1 and 120")
     day = int(config.get("month_day", 1))
-    hour, minute = int(config.get("hour", 9)), int(config.get("minute", 0))
+    hour, minute = 0, 0
     if kind == "monthly":
         if not 1 <= day <= 31:
             raise ValueError("Invalid day of month")
