@@ -59,6 +59,7 @@ def trigger_schema(d):
     s = {}
     if kind == "completion":
         s[field("interval_days", d.get("interval_days", 14))] = vol.All(vol.Coerce(int), vol.Range(min=1, max=3650))
+        s[field("first_due_date", d.get("first_due_date"), False)] = selector.DateSelector()
     elif kind == "weekly":
         s[field("weekday", d.get("weekday", 0))] = vol.All(vol.Coerce(int), vol.Range(min=0, max=6))
         s[field("hour", d.get("hour", 9))] = vol.All(vol.Coerce(int), vol.Range(min=0, max=23))
