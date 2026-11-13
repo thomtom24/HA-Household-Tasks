@@ -2,7 +2,7 @@
 
 Experimental Home Assistant custom integration for rule-driven household task tracking.
 
-**Development status: v0.2.3 (development). Do not rely on it for critical safety or MOT reminders until tested.**
+**Development status: v0.2.6 (testing). Do not rely on it for critical safety or MOT reminders until tested.**
 
 ## Features
 - One task per Home Assistant integration configuration entry; edit through integration options.
@@ -11,22 +11,25 @@ Experimental Home Assistant custom integration for rule-driven household task tr
 - Manual completion, skip, snooze, reopen, and entity/calendar-based auto completion.
 - Home Assistant area selector, including no area (N/A).
 - Persistent history in Home Assistant storage.
-- `sensor.household_tasks_open_names`: count as state, `names` as a list, `announcement` as an Alexa-ready sentence.
-- Dashboard card in `www/household-tasks-card.js`.
+- `sensor.household_tasks_open_names`: count as state, `tasks` and `names` as lists, and optional `announcement` text.
+- Dashboard card bundled in `custom_components/household_tasks/frontend/household-tasks-card.js` and served by the integration.
 
 ## Installation (development testing)
 1. In HACS, add `https://github.com/thomtom24/HA-Household-Tasks` as a custom **Integration** repository.
 2. Download the integration and restart Home Assistant.
 3. Go to Settings → Devices & services → Add integration → Household Tasks.
 4. Create a task. Each task is a separate configuration entry.
-5. For the dashboard card, **manually** copy `www/household-tasks-card.js` into Home Assistant `/config/www/household-tasks-card.js`, then add `/local/household-tasks-card.js` as a JavaScript module dashboard resource.
-6. Add a manual dashboard card:
+5. In Home Assistant, open **Settings → Dashboards → three-dot menu → Resources** (or your dashboard's resource editor). Add a **JavaScript module** resource with URL:
+   `/household_tasks/household-tasks-card.js`
+6. If you previously installed `/local/household-tasks-card.js`, **remove that old resource** to avoid registering the same custom card twice. The old file in `/config/www` may be deleted after verifying the new card works.
+7. Add a manual dashboard card:
 ```yaml
 type: custom:household-tasks-card
 title: Household Tasks
 ```
+8. Refresh your browser after the upgrade. The bundled card is installed by HACS with the integration and is served by Home Assistant after a restart. You do **not** need to copy the JavaScript file on future releases. Browser cache headers are disabled for this route.
 
-The custom card is **not automatically installed by HACS** in this layout. The integration's `hacs.json` describes the integration only.
+**Why is resource setup manual?** The integration serves the card but deliberately does not modify dashboard resource settings automatically. You only need to register the URL once; later HACS updates replace the bundled file.
 
 ## Alexa
 Use:
@@ -42,14 +45,14 @@ Or retrieve the list:
 - Removed holiday-mode pausing from task configuration, scheduling, status sensors and Alexa task list filtering. Existing tasks retain their open/closed state and recurrence history. Previously saved pause settings are ignored; editing a task removes them from its options.
 
 ## Important limitations
-- Calendar logic currently uses calendar entity state attributes; many calendar integrations only expose the currently active or next event, so reliable 24-hour lookahead requires calendar event API work.
+- Calendar lookahead uses Home Assistant's calendar.get_events service; test with your calendar provider before relying on reminders.
 - The task editor uses conditional multi-step configuration screens.
 - Weekly tasks have a single weekday setting; multiple weekday recurrence is not implemented.
 - Some edge cases involving date changes, time zones, and sensor rearming need live Home Assistant testing.
-- The Lovelace card is a separate manual resource.
+- The Lovelace card resource URL needs to be added manually once.
 - There is no automated test suite or validated Home Assistant runtime compatibility yet.
 
-Source is versioned in GitHub; no release has been published yet.
+Source is versioned in GitHub; v0.2.6 is not released until merged and tagged.
 
 
 ### Multiple event types in one calendar (v0.2.5 development)

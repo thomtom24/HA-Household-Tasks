@@ -1,8 +1,10 @@
 """Persistent task scheduler for Household Tasks."""
 from __future__ import annotations
 import asyncio
+from pathlib import Path
 from datetime import datetime, timedelta, time as datetime_time
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.storage import Store
@@ -332,6 +334,13 @@ class Engine:
                 self.hass.async_create_task(self.evaluate(entry))
 
 async def async_setup(hass: HomeAssistant, config):
+    await hass.http.async_register_static_paths([
+        StaticPathConfig(
+            "/household_tasks/household-tasks-card.js",
+            str(Path(__file__).parent / "frontend" / "household-tasks-card.js"),
+            cache_headers=False,
+        )
+    ])
     engine = Engine(hass)
     hass.data[DOMAIN] = engine
     await engine.start()
