@@ -7,14 +7,7 @@
           "name": "Internal name",
           "friendly_name": "Friendly name",
           "category": "Category",
-          "area_id": "Area (optional)",
-          "pause_in_holiday_mode": "Pause during holiday mode"
-        }
-      },
-      "pause": {
-        "title": "Holiday pause conditions",
-        "data": {
-          "pause_entities": "Entities that pause this task when on"
+          "area_id": "Area (optional)"
         }
       },
       "trigger_choice": {
@@ -72,14 +65,7 @@
         "data": {
           "friendly_name": "Friendly name",
           "category": "Category",
-          "area_id": "Area (optional)",
-          "pause_in_holiday_mode": "Pause during holiday mode"
-        }
-      },
-      "pause": {
-        "title": "Holiday pause conditions",
-        "data": {
-          "pause_entities": "Entities that pause this task when on"
+          "area_id": "Area (optional)"
         }
       },
       "trigger_choice": {
