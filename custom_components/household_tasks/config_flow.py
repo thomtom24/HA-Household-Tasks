@@ -9,6 +9,31 @@ TRIGGERS = ["completion", "weekly", "calendar", "date_entity", "numeric", "state
 CLOSES = ["manual", "entity_state", "entity_numeric", "calendar_end",
           "manual_or_entity_state", "manual_or_entity_numeric", "manual_or_calendar_end"]
 
+TRIGGER_LABELS = {
+    "completion": "Time since last completion",
+    "weekly": "Weekly schedule",
+    "calendar": "Calendar event",
+    "date_entity": "Date from an entity",
+    "numeric": "Numeric sensor threshold",
+    "state": "Entity state",
+}
+CLOSE_LABELS = {
+    "manual": "Manual completion",
+    "entity_state": "Entity reaches a state",
+    "entity_numeric": "Numeric sensor condition",
+    "calendar_end": "Calendar event ends",
+    "manual_or_entity_state": "Manual or entity state",
+    "manual_or_entity_numeric": "Manual or numeric condition",
+    "manual_or_calendar_end": "Manual or calendar event ends",
+}
+
+def labelled_options(labels):
+    return selector.SelectSelector(selector.SelectSelectorConfig(
+        options=[selector.SelectOptionDict(value=value, label=label)
+                 for value, label in labels.items()],
+        mode=selector.SelectSelectorMode.DROPDOWN,
+    ))
+
 def field(key, value, required=True):
     return vol.Required(key, default=value) if required else (
         vol.Optional(key, default=value) if value not in (None, "", []) else vol.Optional(key)
@@ -24,7 +49,7 @@ def details_schema(d, editing=False):
     return vol.Schema(s)
 
 def trigger_choice_schema(d):
-    return vol.Schema({field("trigger_type", d.get("trigger_type", "completion")): vol.In(TRIGGERS)})
+    return vol.Schema({field("trigger_type", d.get("trigger_type", "completion")): labelled_options(TRIGGER_LABELS)})
 
 def trigger_schema(d):
     kind = d["trigger_type"]
@@ -52,7 +77,7 @@ def trigger_schema(d):
     return vol.Schema(s)
 
 def close_choice_schema(d):
-    return vol.Schema({field("close_type", d.get("close_type", "manual")): vol.In(CLOSES)})
+    return vol.Schema({field("close_type", d.get("close_type", "manual")): labelled_options(CLOSE_LABELS)})
 
 def close_schema(d):
     kind = d["close_type"]
