@@ -2,7 +2,7 @@
 
 Experimental Home Assistant custom integration for rule-driven household task tracking.
 
-**Development status: v0.2.0 (unverified). Do not rely on it for critical safety or MOT reminders until tested.**
+**Development status: v0.2.3 (development). Do not rely on it for critical safety or MOT reminders until tested.**
 
 ## Features
 - One task per Home Assistant integration configuration entry; edit through integration options.
@@ -10,7 +10,6 @@ Experimental Home Assistant custom integration for rule-driven household task tr
 - Date entity, numeric entity, state entity, and basic calendar entity triggers.
 - Manual completion, skip, snooze, reopen, and entity/calendar-based auto completion.
 - Home Assistant area selector, including no area (N/A).
-- Optional holiday pause using one or more entity IDs (for example `input_boolean.holiday_mode`).
 - Persistent history in Home Assistant storage.
 - `sensor.household_tasks_open_names`: count as state, `names` as a list, `announcement` as an Alexa-ready sentence.
 - Dashboard card in `www/household-tasks-card.js`.
@@ -39,9 +38,12 @@ Or retrieve the list:
 {{ state_attr('sensor.household_tasks_open_names', 'names') }}
 ```
 
+## v0.2.3 change
+- Removed holiday-mode pausing from task configuration, scheduling, status sensors and Alexa task list filtering. Existing tasks retain their open/closed state and recurrence history. Previously saved pause settings are ignored; editing a task removes them from its options.
+
 ## Important limitations
 - Calendar logic currently uses calendar entity state attributes; many calendar integrations only expose the currently active or next event, so reliable 24-hour lookahead requires calendar event API work.
-- The task editor exposes fields for all trigger types together, rather than conditionally hiding irrelevant fields.
+- The task editor uses conditional multi-step configuration screens.
 - Weekly tasks have a single weekday setting; multiple weekday recurrence is not implemented.
 - Some edge cases involving date changes, time zones, and sensor rearming need live Home Assistant testing.
 - The Lovelace card is a separate manual resource.
