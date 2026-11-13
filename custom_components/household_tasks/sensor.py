@@ -13,9 +13,7 @@ class TaskStatusSensor(SensorEntity):
 
     @property
     def native_value(self):
-        return "paused" if self.engine.is_paused(self.entry) else (
-            "open" if self.engine.state(self.entry).get("open") else "closed"
-        )
+        return "open" if self.engine.state(self.entry).get("open") else "closed"
 
     @property
     def extra_state_attributes(self):
@@ -25,9 +23,6 @@ class TaskStatusSensor(SensorEntity):
             "task_entry_id": self.entry.entry_id,
             "friendly_name": c.get("friendly_name") or self.entry.title,
             "category": c.get("category"), "area_id": c.get("area_id"),
-            "pause_in_holiday_mode": c.get("pause_in_holiday_mode", False),
-            "pause_entities": c.get("pause_entities") or [],
-            "paused": self.engine.is_paused(self.entry),
             "due": s.get("due"), "last_completed": s.get("last_completed"),
             "last_opened": s.get("last_opened"), "history": s.get("events", [])[-20:],
         }
