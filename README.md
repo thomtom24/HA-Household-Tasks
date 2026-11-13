@@ -50,3 +50,7 @@ Or retrieve the list:
 - There is no automated test suite or validated Home Assistant runtime compatibility yet.
 
 Source is versioned in GitHub; no release has been published yet.
+
+
+### Multiple event types in one calendar (v0.2.5 development)
+Create one Household Task per event type, using the same Home Assistant calendar entity and a distinct **Calendar event match** filter. The match is case-insensitive and checks whether the event title contains the configured text. For example, with `calendar.rubbish_collection_2`, use `Rubbish Collection`, `Recycling Collection`, and `Food Recycling` for three separate tasks. Set **Hours before event** to `24` for a reminder starting at midnight the previous day for all-day events. The integration requests events up to 90 days ahead using Home Assistant's `calendar.get_events` service, and caches responses for five minutes. A task can be completed manually, automatically when its matched event ends, or either. This is development code and should be tested before release.
