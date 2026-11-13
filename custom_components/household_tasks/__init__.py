@@ -5,7 +5,7 @@ from pathlib import Path
 from datetime import datetime, timedelta, time as datetime_time
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.components.http import StaticPathConfig
-from homeassistant.const import EVENT_STATE_CHANGED
+from homeassistant.const import EVENT_STATE_CHANGED, EVENT_ENTITY_REGISTRY_UPDATED
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.event import async_track_time_interval
@@ -40,12 +40,14 @@ class Engine:
         self.lock = asyncio.Lock()
         self.unsub_timer = None
         self.unsub_states = None
+        self.unsub_registry = None
         self.calendar_cache = {}
 
     async def start(self):
         self.history = await self.store.async_load() or {}
         self.unsub_timer = async_track_time_interval(self.hass, self._tick, timedelta(minutes=1))
         self.unsub_states = self.hass.bus.async_listen(EVENT_STATE_CHANGED, self._state_event)
+        self.unsub_registry = self.hass.bus.async_listen(EVENT_ENTITY_REGISTRY_UPDATED, self._registry_event)
         for name in ("complete", "reopen", "skip", "snooze"):
             self.hass.services.async_register(DOMAIN, name, getattr(self, "_service_" + name))
         self.publish_open_tasks()
@@ -221,6 +223,24 @@ class Engine:
             return entity.state == c["close_state"]
         return False
 
+    def entity_warnings(self, entry):
+        """Return missing/unavailable dependencies without changing task state."""
+        c = self.conf(entry)
+        fields = []
+        if c["trigger_type"] in ("calendar", "date_entity", "numeric", "state"):
+            fields.append(("trigger_entity", "Opening trigger"))
+        if "entity_state" in c["close_type"] or "entity_numeric" in c["close_type"]:
+            fields.append(("close_entity", "Closing condition"))
+        warnings = []
+        for key, label in fields:
+            entity_id = c.get(key)
+            state = self.hass.states.get(entity_id) if entity_id else None
+            if not entity_id or state is None:
+                warnings.append(f"{label}: entity missing ({entity_id or 'not configured'})")
+            elif state.state in ("unknown", "unavailable"):
+                warnings.append(f"{label}: {entity_id} is {state.state}")
+        return warnings
+
     async def evaluate(self, entry):
         async with self.lock:
             now = dt_util.now()
@@ -230,6 +250,7 @@ class Engine:
             else:
                 due, token, active, end = self.calculate(entry, now)
             old = dict(s)
+            s["entity_warnings"] = self.entity_warnings(entry)
             s["due"] = due.isoformat() if due else None
             if end is not None:
                 s["calendar_end"] = end.isoformat()
@@ -335,6 +356,32 @@ class Engine:
     async def _tick(self, now):
         for entry in list(self.entries.values()):
             await self.evaluate(entry)
+
+    @callback
+    def _registry_event(self, event):
+        """Follow entity_id renames reported by the entity registry."""
+        data = event.data
+        if data.get("action") != "update":
+            return
+        old_id = data.get("old_entity_id")
+        new_id = data.get("entity_id")
+        if not old_id or not new_id or old_id == new_id:
+            return
+        self.hass.async_create_task(self._apply_entity_rename(old_id, new_id))
+
+    async def _apply_entity_rename(self, old_id, new_id):
+        for entry in list(self.entries.values()):
+            c = self.conf(entry)
+            changes = {}
+            if c.get("trigger_entity") == old_id:
+                changes["trigger_entity"] = new_id
+            if c.get("close_entity") == old_id:
+                changes["close_entity"] = new_id
+            if not changes:
+                continue
+            # Options override data; preserve all existing task settings.
+            options = {**entry.options, **changes}
+            self.hass.config_entries.async_update_entry(entry, options=options)
 
     @callback
     def _state_event(self, event):
