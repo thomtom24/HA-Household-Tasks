@@ -7,7 +7,8 @@ from .const import DOMAIN, DEFAULTS
 
 TRIGGERS = ["completion", "weekly", "calendar", "date_entity", "numeric", "state"]
 CLOSES = ["manual", "entity_state", "entity_numeric", "calendar_end",
-          "manual_or_entity_state", "manual_or_entity_numeric", "manual_or_calendar_end"]
+          "manual_or_entity_state", "manual_or_entity_numeric", "manual_or_calendar_end",
+          "trigger_inactive", "manual_or_trigger_inactive"]
 
 TRIGGER_LABELS = {
     "completion": "Time since last completion",
@@ -25,6 +26,8 @@ CLOSE_LABELS = {
     "manual_or_entity_state": "Manual or entity state",
     "manual_or_entity_numeric": "Manual or numeric condition",
     "manual_or_calendar_end": "Manual or calendar event ends",
+    "trigger_inactive": "Trigger condition no longer true",
+    "manual_or_trigger_inactive": "Manual or trigger condition no longer true",
 }
 
 def labelled_options(labels):
@@ -71,15 +74,15 @@ def trigger_schema(d):
         s[field("trigger_entity", d.get("trigger_entity", ""))] = selector.EntitySelector()
         if kind == "numeric":
             s[field("threshold", d.get("threshold", 3.0))] = vol.Coerce(float)
-            s[field("operator", d.get("operator", "below"))] = vol.In(["below", "above", "equal"])
+            s[field("operator", d.get("operator", "below"))] = labelled_options({"below": "Below (<)", "below_or_equal": "Below or equal (≤)", "above": "Above (>)", "above_or_equal": "Above or equal (≥)", "equal": "Equal (=)"})
         else:
             s[field("trigger_state", d.get("trigger_state", "on"))] = str
     return vol.Schema(s)
 
 def close_choice_schema(d):
-    choices = CLOSE_LABELS if d.get("trigger_type") == "calendar" else {
-        key: label for key, label in CLOSE_LABELS.items() if "calendar_end" not in key
-    }
+    choices = {key: label for key, label in CLOSE_LABELS.items()
+               if ("calendar_end" not in key or d.get("trigger_type") == "calendar")
+               and ("trigger_inactive" not in key or d.get("trigger_type") in ("numeric", "state"))}
     selected = d.get("close_type", "manual")
     if selected not in choices:
         selected = "manual"
@@ -137,7 +140,7 @@ class TaskSteps:
         return self.async_show_form(step_id="close_choice", data_schema=close_choice_schema(self.values))
 
     async def async_step_close_settings(self, user_input=None):
-        if self.values["close_type"] in ("manual", "calendar_end", "manual_or_calendar_end"):
+        if self.values["close_type"] in ("manual", "calendar_end", "manual_or_calendar_end", "trigger_inactive", "manual_or_trigger_inactive"):
             return await self._finish()
         if user_input is not None:
             self.values.update(user_input)
