@@ -1,5 +1,5 @@
 class HouseholdTasksCard extends HTMLElement {
-  setConfig(config) { this.config = config; this.filter = 'open'; this.render(); }
+  setConfig(config) { this.config = config; this.filter = this.filter || 'open'; this.upcomingRange = this.upcomingRange || '14'; this.render(); }
   set hass(hass) { this._hass = hass; this.render(); }
   getCardSize() { return 5; }
   render() {
@@ -11,7 +11,19 @@ class HouseholdTasksCard extends HTMLElement {
         entry:s.attributes.task_entry_id, state:s.state, category:s.attributes.category, triggerType:s.attributes.trigger_type,
         warnings:Array.isArray(s.attributes.entity_warnings)?s.attributes.entity_warnings:[],
         manualAllowed:s.attributes.manual_completion_allowed === true || (s.attributes.manual_completion_allowed == null && (!s.attributes.close_type || s.attributes.close_type === "manual" || s.attributes.close_type.startsWith("manual_or_")))}));
-    const upcoming = tasks.filter(t => t.state === 'closed' && t.due && new Date(t.due) > new Date());
+    const now = new Date();
+    const endOfRange = new Date(now);
+    if (this.upcomingRange === 'month') {
+      endOfRange.setMonth(endOfRange.getMonth() + 1);
+    } else if (this.upcomingRange !== 'all') {
+      endOfRange.setDate(endOfRange.getDate() + Number(this.upcomingRange));
+    }
+    const upcoming = tasks.filter(t => {
+      if (t.state !== 'closed' || !t.due) return false;
+      const due = new Date(t.due);
+      return !Number.isNaN(due.getTime()) && due > now &&
+        (this.upcomingRange === 'all' || due <= endOfRange);
+    }).sort((a,b) => new Date(a.due) - new Date(b.due));
     const visible = this.filter === 'upcoming' ? upcoming : tasks.filter(t=>t.state === 'open');
     const formatDateTime = date => {
       const locale = this._hass.locale || {};
@@ -67,6 +79,13 @@ class HouseholdTasksCard extends HTMLElement {
     this.shadowRoot.innerHTML = `<ha-card><div class="wrap"><h2>${esc(this.config.title || 'Household Tasks')}</h2>
       <div class="tabs"><button data-tab="open">Open (${tasks.filter(t=>t.state==='open').length})</button>
       <button data-tab="upcoming">Upcoming (${upcoming.length})</button></div>
+      ${this.filter === 'upcoming' ? `<div class="range-filter"><label for="upcoming-range">Show tasks due within</label>
+      <select id="upcoming-range" aria-label="Upcoming task time range">
+        <option value="7" ${this.upcomingRange === '7' ? 'selected' : ''}>7 days</option>
+        <option value="14" ${this.upcomingRange === '14' ? 'selected' : ''}>14 days</option>
+        <option value="month" ${this.upcomingRange === 'month' ? 'selected' : ''}>1 month</option>
+        <option value="all" ${this.upcomingRange === 'all' ? 'selected' : ''}>All</option>
+      </select></div>` : ''}
       ${tasks.some(t=>t.warnings.length)?`<div class="health-alert">⚠ ${tasks.filter(t=>t.warnings.length).length} task(s) have missing or unavailable entities. Check the warnings below or task status sensors.</div>`:""}
       ${visible.length ? visible.map(t=>`<div class="task status-${status(t).key}"><div class="task-body"><div class="task-title"><b>${esc(t.name)}</b><span class="status-pill">${esc(status(t).label)}</span></div><small>${esc(t.category||'')}
       ${dueInfo(t)?' · '+esc(dueInfo(t)):''}</small>${t.warnings.length?`<small class="warning">⚠ ${esc(t.warnings.join('; '))}</small>`:''}</div>
@@ -81,8 +100,13 @@ class HouseholdTasksCard extends HTMLElement {
       .status-upcoming{--task-accent:var(--success-color,#43a047)}.status-automatic{--task-accent:var(--info-color,#2196f3)}
       .status-warning{--task-accent:var(--warning-color,#e5a100)}
       .tabs button[data-tab="${this.filter}"]{border-color:var(--primary-color)}
+      .range-filter{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px}
+      .range-filter label{font-size:13px;color:var(--secondary-text-color)}
+      .range-filter select{background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:8px;padding:7px 10px;font:inherit}
       .task button{flex-shrink:0}.health-alert,.warning{color:var(--warning-color,#c77b00)}.health-alert{margin:8px 0;padding:8px;border:1px solid currentColor;border-radius:8px;font-size:13px}small{display:block;color:var(--secondary-text-color);margin-top:4px}</style>`;
     this.shadowRoot.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{this.filter=b.dataset.tab;this.render()});
+    const rangeSelector = this.shadowRoot.querySelector('#upcoming-range');
+    if (rangeSelector) rangeSelector.onchange = event => { this.upcomingRange = event.target.value; this.render(); };
     this.shadowRoot.querySelectorAll('[data-complete]').forEach(b=>b.onclick=()=>this._hass.callService('household_tasks','complete',{entry_id:b.dataset.complete}));
   }
 }
