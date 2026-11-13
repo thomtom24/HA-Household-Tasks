@@ -8,7 +8,8 @@ class HouseholdTasksCard extends HTMLElement {
     const tasks = Object.entries(this._hass.states)
       .filter(([id,s]) => id.startsWith('sensor.') && s.attributes.task_entry_id && id.endsWith('_status'))
       .map(([id,s]) => ({id, name:(s.attributes.friendly_name || id).replace(/\s+status$/i, ''), due:s.attributes.due,
-        entry:s.attributes.task_entry_id, state:s.state, category:s.attributes.category}));
+        entry:s.attributes.task_entry_id, state:s.state, category:s.attributes.category,
+        manualAllowed:s.attributes.manual_completion_allowed === true || (s.attributes.manual_completion_allowed == null && (!s.attributes.close_type || s.attributes.close_type === "manual" || s.attributes.close_type.startsWith("manual_or_")))}));
     const upcoming = tasks.filter(t => t.state === 'closed' && t.due && new Date(t.due) > new Date());
     const visible = this.filter === 'upcoming' ? upcoming : tasks.filter(t=>t.state === 'open');
     const esc = x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -17,7 +18,7 @@ class HouseholdTasksCard extends HTMLElement {
       <button data-tab="upcoming">Upcoming (${upcoming.length})</button></div>
       ${visible.length ? visible.map(t=>`<div class="task"><div><b>${esc(t.name)}</b><small>${esc(t.category||'')}
       ${t.due?' · '+esc(new Date(t.due).toLocaleString()):''}</small></div>
-      ${t.state==='open'?`<button data-complete="${esc(t.entry)}">✓ Done</button>`:''}</div>`).join(''):'<p>No tasks in this view.</p>'}
+      ${t.state==='open' && t.manualAllowed?`<button data-complete="${esc(t.entry)}">✓ Done</button>`:''}</div>`).join(''):'<p>No tasks in this view.</p>'}
       </div></ha-card><style>.wrap{padding:16px}h2{margin:0 0 16px;font-size:20px}
       .tabs{display:flex;gap:8px;margin-bottom:12px}.tabs button,.task button{border:1px solid var(--divider-color);
       border-radius:8px;padding:9px;background:var(--card-background-color);color:var(--primary-text-color);cursor:pointer}
