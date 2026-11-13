@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
+from .scheduling import fixed_schedule
 from .const import DOMAIN, PLATFORMS, DEFAULTS
 
 def parse_dt(value):
@@ -162,6 +163,13 @@ class Engine:
             first_due = parse_dt(c.get("first_due_date")) if not completed else None
             due = first_due or (base + timedelta(days=int(c["interval_days"])))
             token = "completion:" + (base.isoformat() if completed or not first_due else "initial:" + first_due.isoformat())
+            active = now >= due
+        elif kind in ("monthly", "yearly"):
+            due, token = fixed_schedule(
+                now, c,
+                None if s.get("last_completed") else parse_dt(s.get("created")),
+                s.get("completed_token"),
+            )
             active = now >= due
         elif kind == "weekly":
             slot = now.replace(hour=int(c["hour"]), minute=int(c["minute"]), second=0, microsecond=0)
