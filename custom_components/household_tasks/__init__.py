@@ -176,7 +176,7 @@ class Engine:
                     self._finish(s, now, "expired")
                 if token:
                     s["completed_token"] = token
-            if not s.get("open") and active and not paused and not snoozed and token != s.get("completed_token"):
+            if not s.get("open") and active and not snoozed and token != s.get("completed_token"):
                 if self.conf(entry)["trigger_type"] not in ("numeric", "state") or not s.get("latched"):
                     s["open"] = True
                     s["last_opened"] = now.isoformat()
@@ -258,13 +258,8 @@ class Engine:
         entity_id = event.data.get("entity_id")
         for entry in list(self.entries.values()):
             c = self.conf(entry)
-            pause = c.get("pause_entities") or []
-            if isinstance(pause, str):
-                pause = [pause]
-            if entity_id in (c.get("trigger_entity"), c.get("close_entity")) or entity_id in pause:
+            if entity_id in (c.get("trigger_entity"), c.get("close_entity")):
                 self.hass.async_create_task(self.evaluate(entry))
-                if entity_id in pause:
-                    self.notify(entry.entry_id)
 
 async def async_setup(hass: HomeAssistant, config):
     engine = Engine(hass)
