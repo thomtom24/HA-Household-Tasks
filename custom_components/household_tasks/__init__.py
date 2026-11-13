@@ -165,9 +165,16 @@ class Engine:
             due, token, active, end = self.calculate(entry, now)
             old = dict(s)
             s["due"] = due.isoformat() if due else None
+            if end is not None:
+                s["calendar_end"] = end.isoformat()
+            if self.conf(entry)["trigger_type"] == "calendar" and end is None and s.get("open"):
+                end = parse_dt(s.get("calendar_end"))
             s["next_token"] = token
             if s.get("snooze_until") and (parse_dt(s["snooze_until"]) or now) <= now:
                 s["snooze_until"] = None
+                if self.conf(entry)["trigger_type"] in ("numeric", "state"):
+                    s["latched"] = False
+                    s["completed_token"] = None
             snoozed = bool(s.get("snooze_until"))
             if s.get("open") and self.close_condition(entry, now, end):
                 self._finish(s, now, "auto_completed")
@@ -178,6 +185,7 @@ class Engine:
                     self._finish(s, now, "expired")
                 if token:
                     s["completed_token"] = token
+                s["calendar_end"] = None
             if not s.get("open") and active and not snoozed and token != s.get("completed_token"):
                 if self.conf(entry)["trigger_type"] not in ("numeric", "state") or not s.get("latched"):
                     s["open"] = True
