@@ -21,7 +21,6 @@ def details_schema(d, editing=False):
     s[field("friendly_name", d.get("friendly_name", ""), True)] = str
     s[field("category", d.get("category", "Household"))] = str
     s[field("area_id", d.get("area_id"), False)] = selector.AreaSelector()
-    s[field("pause_in_holiday_mode", d.get("pause_in_holiday_mode", False))] = bool
     return vol.Schema(s)
 
 def trigger_choice_schema(d):
@@ -67,16 +66,10 @@ def close_schema(d):
             s[field("close_state", d.get("close_state", "off"))] = str
     return vol.Schema(s)
 
-def pause_schema(d):
-    return vol.Schema({
-        field("pause_entities", d.get("pause_entities", []), True):
-            selector.EntitySelector(selector.EntitySelectorConfig(multiple=True))
-    })
-
 class TaskSteps:
     """Shared steps for creation and editing."""
     def initialize(self, values, editing):
-        self.values = {**DEFAULTS, **values}
+        self.values = {**DEFAULTS, **{k: v for k, v in values.items() if k not in ("pause_in_holiday_mode", "pause_entities")}}
         self.editing = editing
 
     async def async_step_details(self, user_input=None):
@@ -84,17 +77,8 @@ class TaskSteps:
             self.values.update(user_input)
             if not self.values.get("friendly_name", "").strip():
                 return self.async_show_form(step_id="details", data_schema=details_schema(self.values, self.editing), errors={"base": "required"})
-            return await self.async_step_pause()
+            return await self.async_step_trigger_choice()
         return self.async_show_form(step_id="details", data_schema=details_schema(self.values, self.editing))
-
-    async def async_step_pause(self, user_input=None):
-        if not self.values.get("pause_in_holiday_mode"):
-            self.values["pause_entities"] = []
-            return await self.async_step_trigger_choice()
-        if user_input is not None:
-            self.values.update(user_input)
-            return await self.async_step_trigger_choice()
-        return self.async_show_form(step_id="pause", data_schema=pause_schema(self.values))
 
     async def async_step_trigger_choice(self, user_input=None):
         if user_input is not None:
@@ -135,7 +119,7 @@ class HouseholdTasksConfigFlow(TaskSteps, config_entries.ConfigFlow, domain=DOMA
             return self.async_abort(reason="invalid_name")
         await self.async_set_unique_id(key)
         self._abort_if_unique_id_configured()
-        return self.async_create_entry(title=self.values["friendly_name"], data=self.values)
+        return self.async_create_entry(title=self.values["friendly_name"], data={k: v for k, v in self.values.items() if k not in ("pause_in_holiday_mode", "pause_entities")})
 
     @staticmethod
     def async_get_options_flow(config_entry):
@@ -150,4 +134,4 @@ class HouseholdTasksOptionsFlow(TaskSteps, config_entries.OptionsFlow):
         return await self.async_step_details(user_input)
 
     async def _finish(self):
-        return self.async_create_entry(title="", data=self.values)
+        return self.async_create_entry(title="", data={k: v for k, v in self.values.items() if k not in ("pause_in_holiday_mode", "pause_entities")})
