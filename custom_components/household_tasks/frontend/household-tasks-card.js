@@ -9,6 +9,7 @@ class HouseholdTasksCard extends HTMLElement {
       .filter(([id,s]) => id.startsWith('sensor.') && s.attributes.task_entry_id && id.endsWith('_status'))
       .map(([id,s]) => ({id, name:(s.attributes.friendly_name || id).replace(/\s+status$/i, ''), due:s.attributes.due, dueAtOpen:s.attributes.due_at_open, opened:s.attributes.last_opened,
         entry:s.attributes.task_entry_id, state:s.state, category:s.attributes.category,
+        warnings:Array.isArray(s.attributes.entity_warnings)?s.attributes.entity_warnings:[],
         manualAllowed:s.attributes.manual_completion_allowed === true || (s.attributes.manual_completion_allowed == null && (!s.attributes.close_type || s.attributes.close_type === "manual" || s.attributes.close_type.startsWith("manual_or_")))}));
     const upcoming = tasks.filter(t => t.state === 'closed' && t.due && new Date(t.due) > new Date());
     const visible = this.filter === 'upcoming' ? upcoming : tasks.filter(t=>t.state === 'open');
@@ -33,14 +34,15 @@ class HouseholdTasksCard extends HTMLElement {
     this.shadowRoot.innerHTML = `<ha-card><div class="wrap"><h2>${esc(this.config.title || 'Household Tasks')}</h2>
       <div class="tabs"><button data-tab="open">Open (${tasks.filter(t=>t.state==='open').length})</button>
       <button data-tab="upcoming">Upcoming (${upcoming.length})</button></div>
+      ${tasks.some(t=>t.warnings.length)?`<div class="health-alert">⚠ ${tasks.filter(t=>t.warnings.length).length} task(s) have missing or unavailable entities. Check the warnings below or task status sensors.</div>`:""}
       ${visible.length ? visible.map(t=>`<div class="task"><div><b>${esc(t.name)}</b><small>${esc(t.category||'')}
-      ${dueInfo(t)?' · '+esc(dueInfo(t)):''}</small></div>
+      ${dueInfo(t)?' · '+esc(dueInfo(t)):''}</small>${t.warnings.length?`<small class="warning">⚠ ${esc(t.warnings.join('; '))}</small>`:''}</div>
       ${t.state==='open' && t.manualAllowed?`<button data-complete="${esc(t.entry)}">✓ Done</button>`:''}</div>`).join(''):'<p>No tasks in this view.</p>'}
       </div></ha-card><style>.wrap{padding:16px}h2{margin:0 0 16px;font-size:20px}
       .tabs{display:flex;gap:8px;margin-bottom:12px}.tabs button,.task button{border:1px solid var(--divider-color);
       border-radius:8px;padding:9px;background:var(--card-background-color);color:var(--primary-text-color);cursor:pointer}
       .task{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;
-      border-bottom:1px solid var(--divider-color)}small{display:block;color:var(--secondary-text-color);margin-top:4px}</style>`;
+      border-bottom:1px solid var(--divider-color)}.health-alert,.warning{color:var(--warning-color,#c77b00)}.health-alert{margin:8px 0;padding:8px;border:1px solid currentColor;border-radius:8px;font-size:13px}small{display:block;color:var(--secondary-text-color);margin-top:4px}</style>`;
     this.shadowRoot.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{this.filter=b.dataset.tab;this.render()});
     this.shadowRoot.querySelectorAll('[data-complete]').forEach(b=>b.onclick=()=>this._hass.callService('household_tasks','complete',{entry_id:b.dataset.complete}));
   }
