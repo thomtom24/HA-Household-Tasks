@@ -26,7 +26,7 @@ def parse_dt(value):
 def compare(value, op, threshold):
     try:
         x, y = float(value), float(threshold)
-        return x < y if op == "below" else x > y if op == "above" else x == y
+        return {"below": x < y, "below_or_equal": x <= y, "above": x > y, "above_or_equal": x >= y, "equal": x == y}.get(op, False)
     except (ValueError, TypeError):
         return False
 
@@ -197,6 +197,19 @@ class Engine:
         rule = c["close_type"]
         if rule == "manual":
             return False
+        if "trigger_inactive" in rule:
+            if c["trigger_type"] not in ("numeric", "state"):
+                return False
+            entity = self.hass.states.get(c.get("trigger_entity", ""))
+            if entity is None or entity.state in ("unknown", "unavailable", ""):
+                return False
+            if c["trigger_type"] == "numeric":
+                try:
+                    float(entity.state)
+                except (ValueError, TypeError):
+                    return False
+                return not compare(entity.state, c["operator"], c["threshold"])
+            return entity.state != c["trigger_state"]
         if "calendar_end" in rule:
             return calendar_end is not None and now >= calendar_end
         entity = self.hass.states.get(c.get("close_entity", ""))
