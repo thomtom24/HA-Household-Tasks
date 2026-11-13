@@ -70,9 +70,9 @@ class Engine:
         else:
             announcement = f"{len(names)} household tasks are outstanding: " + ", ".join(names[:-1]) + ", and " + names[-1] + "."
         self.hass.states.async_set("sensor.household_tasks_open_names", len(names), {
-            "friendly_name": "Household Tasks Open Names",
+            "friendly_name": "Household Tasks Open List",
             "icon": "mdi:format-list-checks",
-            "names": names, "announcement": announcement, "count": len(names)
+            "names": names, "tasks": names, "announcement": announcement, "count": len(names)
         })
 
     def notify(self, entry_id):
