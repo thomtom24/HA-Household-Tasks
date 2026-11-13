@@ -7,7 +7,8 @@ from .const import DOMAIN, DEFAULTS
 
 TRIGGERS = ["completion", "weekly", "calendar", "date_entity", "numeric", "state"]
 CLOSES = ["manual", "entity_state", "entity_numeric", "calendar_end",
-          "manual_or_entity_state", "manual_or_entity_numeric", "manual_or_calendar_end",\n          "trigger_inactive", "manual_or_trigger_inactive"]
+          "manual_or_entity_state", "manual_or_entity_numeric", "manual_or_calendar_end",
+          "trigger_inactive", "manual_or_trigger_inactive"]
 
 TRIGGER_LABELS = {
     "completion": "Time since last completion",
