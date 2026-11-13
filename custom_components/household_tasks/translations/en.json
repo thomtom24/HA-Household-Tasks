@@ -1,69 +1,127 @@
 {
   "config": {
     "step": {
-      "user": {
-        "title": "Add household task",
+      "details": {
+        "title": "Task details",
         "data": {
           "name": "Internal name",
           "friendly_name": "Friendly name",
           "category": "Category",
           "area_id": "Area (optional)",
-          "pause_in_holiday_mode": "Pause during holiday mode",
-          "pause_entities": "Entities that pause this task",
-          "trigger_type": "Opening trigger",
-          "interval_days": "Days since completion",
-          "weekday": "Weekday (Monday = 0)",
-          "hour": "Hour",
-          "minute": "Minute",
-          "trigger_entity": "Trigger entity",
-          "trigger_state": "Trigger state",
-          "threshold": "Trigger threshold",
-          "operator": "Trigger comparison",
-          "offset_days": "Days before date",
-          "calendar_offset_hours": "Hours before calendar event",
-          "calendar_match": "Calendar event text filter",
-          "close_type": "Closing rule",
-          "close_entity": "Closing entity",
-          "close_state": "Closing state",
-          "close_threshold": "Closing threshold",
-          "close_operator": "Closing comparison"
+          "pause_in_holiday_mode": "Pause during holiday mode"
         }
-      }
-    },
-    "error": {
-      "invalid_name": "Invalid task name"
-    }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "title": "Edit task",
+      },
+      "pause": {
+        "title": "Holiday pause conditions",
         "data": {
-          "name": "Internal name",
-          "friendly_name": "Friendly name",
-          "category": "Category",
-          "area_id": "Area (optional)",
-          "pause_in_holiday_mode": "Pause during holiday mode",
-          "pause_entities": "Pause entities",
-          "trigger_type": "Opening trigger",
-          "interval_days": "Days since completion",
-          "weekday": "Weekday",
-          "hour": "Hour",
-          "minute": "Minute",
+          "pause_entities": "Entities that pause this task when on"
+        }
+      },
+      "trigger_choice": {
+        "title": "When should the task open?",
+        "data": {
+          "trigger_type": "Opening trigger"
+        }
+      },
+      "trigger_settings": {
+        "title": "Opening trigger settings",
+        "data": {
+          "interval_days": "Days after last completion",
+          "weekday": "Weekday (Monday = 0)",
+          "hour": "Hour (0–23)",
+          "minute": "Minute (0–59)",
           "trigger_entity": "Trigger entity",
           "trigger_state": "Trigger state",
           "threshold": "Threshold",
           "operator": "Comparison",
           "offset_days": "Days before date",
-          "calendar_offset_hours": "Hours before event",
-          "calendar_match": "Event text filter",
-          "close_type": "Closing rule",
+          "calendar_offset_hours": "Hours before calendar event",
+          "calendar_match": "Calendar event text filter (optional)"
+        }
+      },
+      "close_choice": {
+        "title": "How should the task close?",
+        "data": {
+          "close_type": "Closing rule"
+        }
+      },
+      "close_settings": {
+        "title": "Automatic closing conditions",
+        "data": {
           "close_entity": "Closing entity",
           "close_state": "Closing state",
           "close_threshold": "Closing threshold",
-          "close_operator": "Closing comparison"
+          "close_operator": "Comparison"
         }
       }
+    },
+    "error": {
+      "required": "Friendly name is required"
+    },
+    "abort": {
+      "invalid_name": "The task name is invalid"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Edit task"
+      },
+      "details": {
+        "title": "Task details",
+        "data": {
+          "friendly_name": "Friendly name",
+          "category": "Category",
+          "area_id": "Area (optional)",
+          "pause_in_holiday_mode": "Pause during holiday mode"
+        }
+      },
+      "pause": {
+        "title": "Holiday pause conditions",
+        "data": {
+          "pause_entities": "Entities that pause this task when on"
+        }
+      },
+      "trigger_choice": {
+        "title": "When should the task open?",
+        "data": {
+          "trigger_type": "Opening trigger"
+        }
+      },
+      "trigger_settings": {
+        "title": "Opening trigger settings",
+        "data": {
+          "interval_days": "Days after last completion",
+          "weekday": "Weekday (Monday = 0)",
+          "hour": "Hour (0–23)",
+          "minute": "Minute (0–59)",
+          "trigger_entity": "Trigger entity",
+          "trigger_state": "Trigger state",
+          "threshold": "Threshold",
+          "operator": "Comparison",
+          "offset_days": "Days before date",
+          "calendar_offset_hours": "Hours before calendar event",
+          "calendar_match": "Calendar event text filter (optional)"
+        }
+      },
+      "close_choice": {
+        "title": "How should the task close?",
+        "data": {
+          "close_type": "Closing rule"
+        }
+      },
+      "close_settings": {
+        "title": "Automatic closing conditions",
+        "data": {
+          "close_entity": "Closing entity",
+          "close_state": "Closing state",
+          "close_threshold": "Closing threshold",
+          "close_operator": "Comparison"
+        }
+      }
+    },
+    "error": {
+      "required": "Friendly name is required"
     }
   }
 }
