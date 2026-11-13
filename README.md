@@ -44,6 +44,12 @@ Or retrieve the list:
 ## v0.2.3 change
 - Removed holiday-mode pausing from task configuration, scheduling, status sensors and task-list filtering. Existing tasks retain their open/closed state and recurrence history. Previously saved pause settings are ignored; editing a task removes them from its options.
 
+## Entity renames and availability (v0.2.7 development)
+- When Home Assistant reports an entity ID rename through its entity registry, Household Tasks updates task opening and closing entity references automatically. Renaming only the friendly name needs no update.
+- Missing, `unknown`, and `unavailable` dependencies are exposed on each task status sensor as `entity_warnings` and `has_entity_warning`, and flagged in the bundled card.
+- A missing or unavailable sensor does not by itself complete a task; the existing task state and history remain intact. Check the warning if an entity is removed or replaced rather than renamed.
+- Numeric comparisons support `<`, `<=`, `>`, `>=`, and `=`. Numeric/state tasks can close when their trigger condition becomes false, with or without manual completion.
+
 ## Important limitations
 - Calendar lookahead uses Home Assistant's calendar.get_events service; test with your calendar provider before relying on reminders.
 - The task editor uses conditional multi-step configuration screens.
