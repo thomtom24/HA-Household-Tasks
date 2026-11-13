@@ -1,4 +1,4 @@
-"""Task status and Alexa-friendly aggregate sensor."""
+"""Task status sensors for Home Assistant."""
 from homeassistant.components.sensor import SensorEntity
 from .const import DOMAIN
 
