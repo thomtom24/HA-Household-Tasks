@@ -103,7 +103,27 @@ class HouseholdTasksCard extends HTMLElement {
     const rangeSelector = this.shadowRoot.querySelector('#upcoming-range');
     if (rangeSelector) rangeSelector.onchange = event => { this.upcomingRange = event.target.value; this.render(); };
     this.shadowRoot.querySelectorAll('[data-complete]').forEach(b=>b.onclick=()=>this._hass.callService('household_tasks','complete',{entry_id:b.dataset.complete}));
-    this.shadowRoot.querySelectorAll('[data-early]').forEach(b=>b.onclick=()=>this._hass.callService('household_tasks','complete_early',{entry_id:b.dataset.early}));
+    this.shadowRoot.querySelectorAll('[data-early]').forEach(button => {
+      button.onclick = async () => {
+        if (button.disabled) return;
+        const task = tasks.find(t => t.entry === button.dataset.early);
+        if (!task) return;
+        const confirmed = window.confirm(
+          'Complete "' + task.name + '" early?\n\n' +
+          'This records a completion now and updates its next due date.'
+        );
+        if (!confirmed) return;
+        button.disabled = true; // Prevent double taps while awaiting Home Assistant.
+        try {
+          await this._hass.callService('household_tasks', 'complete_early', {
+            entry_id: button.dataset.early
+          });
+        } catch (error) {
+          button.disabled = false;
+          window.alert('Could not complete task early: ' + (error?.message || String(error)));
+        }
+      };
+    });
   }
 }
 customElements.define('household-tasks-card',HouseholdTasksCard);
