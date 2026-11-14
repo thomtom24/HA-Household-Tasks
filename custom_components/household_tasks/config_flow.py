@@ -74,7 +74,7 @@ def trigger_schema(d):
         s[field("weekday", d.get("weekday", 0))] = vol.All(vol.Coerce(int), vol.Range(min=0, max=6))
     elif kind == "calendar":
         s[field("trigger_entity", d.get("trigger_entity", ""))] = selector.EntitySelector(selector.EntitySelectorConfig(domain="calendar"))
-        s[field("calendar_offset_hours", d.get("calendar_offset_hours", 24))] = vol.All(vol.Coerce(int), vol.Range(min=0, max=720))
+        s[field("calendar_offset_days", d.get("calendar_offset_days", int(d.get("calendar_offset_hours", 24)) // 24))] = vol.All(vol.Coerce(int), vol.Range(min=0, max=365))
         s[field("calendar_match", d.get("calendar_match", ""), False)] = str
     elif kind == "date_entity":
         s[field("trigger_entity", d.get("trigger_entity", ""))] = selector.EntitySelector()
@@ -136,6 +136,8 @@ class TaskSteps:
     async def async_step_trigger_settings(self, user_input=None):
         if user_input is not None:
             self.values.update(user_input)
+            if self.values.get("trigger_type") == "calendar":
+                self.values.pop("calendar_offset_hours", None)
             if self.values.get("trigger_type") in ("weekly", "monthly", "yearly"):
                 self.values["hour"] = 0
                 self.values["minute"] = 0
