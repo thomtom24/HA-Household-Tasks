@@ -151,7 +151,7 @@ class Engine:
             if not start:
                 continue
             token = "calendar:" + start.isoformat() + ":" + title
-            candidates.append((local_midnight(start) - offset, token, start, end))
+            candidates.append((local_midnight(start.date() - offset), token, start, end))
         candidates.sort(key=lambda item: item[0])
         # Keep an open task tied to its original event, even when the
         # calendar starts advertising a later collection.
@@ -210,7 +210,7 @@ class Engine:
                 raw = entity.attributes.get("date") or entity.attributes.get("timestamp")
             date = parse_dt(raw)
             if date:
-                due = local_midnight(date) - timedelta(days=int(c["offset_days"]))
+                due = local_midnight(date.date() - timedelta(days=int(c["offset_days"])))
                 token = "date:" + date.isoformat()
                 active = now >= due
         elif kind in ("numeric", "state"):
