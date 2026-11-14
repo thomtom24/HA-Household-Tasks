@@ -62,7 +62,7 @@ class Engine:
         self.unsub_timer = async_track_time_interval(self.hass, self._tick, timedelta(minutes=1))
         self.unsub_states = self.hass.bus.async_listen(EVENT_STATE_CHANGED, self._state_event)
         self.unsub_registry = self.hass.bus.async_listen(EVENT_ENTITY_REGISTRY_UPDATED, self._registry_event)
-        for name in ("complete", "reopen", "skip", "snooze"):
+        for name in ("complete", "complete_early", "reopen", "skip", "snooze"):
             self.hass.services.async_register(DOMAIN, name, getattr(self, "_service_" + name))
         self.publish_open_tasks()
 
@@ -190,8 +190,9 @@ class Engine:
             if slot > now:
                 slot -= timedelta(days=7)
             previous_token = "weekly:" + slot.isoformat()
-            if s.get("completed_token") == previous_token:
-                slot += timedelta(days=7)
+            completed_slot = parse_dt(s.get("completed_token", "")[7:]) if str(s.get("completed_token", "")).startswith("weekly:") else None
+            if completed_slot and completed_slot >= slot:
+                slot = completed_slot + timedelta(days=7)
             elif s.get("last_completed") is None and parse_dt(s["created"]) > slot:
                 slot += timedelta(days=7)
             due = slot
@@ -327,9 +328,23 @@ class Engine:
         async with self.lock:
             s, now = self.state(entry), dt_util.now()
             close_type = self.conf(entry)["close_type"]
-            if action == "complete" and not (close_type == "manual" or close_type.startswith("manual_or_")):
+            if action in ("complete", "complete_early") and not (close_type == "manual" or close_type.startswith("manual_or_")):
                 raise ValueError("This task is configured for automatic completion only")
-            if action in ("complete", "skip"):
+            if action == "complete_early":
+                kind = self.conf(entry)["trigger_type"]
+                if kind not in ("completion", "weekly", "monthly", "yearly"):
+                    raise ValueError("Early completion is only supported for completion and fixed schedules")
+                if s.get("open"):
+                    raise ValueError("Task is already open; use normal completion")
+                due, token, active, _ = self.calculate(entry, now)
+                if not due or active or due <= now:
+                    raise ValueError("Task has no future scheduled occurrence to complete early")
+                # Record the future occurrence as satisfied without opening it.
+                # Completion-relative tasks will recalculate from this timestamp.
+                self._finish(s, now, "completed_early")
+                s["completed_token"] = token
+                s["next_token"] = token
+            elif action in ("complete", "skip"):
                 if not s.get("open"):
                     return
                 token = s.get("active_token")
@@ -366,6 +381,9 @@ class Engine:
 
     async def _service_complete(self, call):
         await self.act(self.find_entry(call), "complete")
+
+    async def _service_complete_early(self, call):
+        await self.act(self.find_entry(call), "complete_early")
 
     async def _service_reopen(self, call):
         await self.act(self.find_entry(call), "reopen")
