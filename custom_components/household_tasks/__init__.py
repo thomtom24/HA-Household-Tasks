@@ -331,6 +331,15 @@ class Engine:
             if action in ("complete", "complete_early") and not (close_type == "manual" or close_type.startswith("manual_or_")):
                 raise ValueError("This task is configured for automatic completion only")
             if action == "complete_early":
+                # Block duplicate early completions on the same local day.
+                last = parse_dt(s.get("last_completed"))
+                if last and last.date() == now.date() and any(
+                    event.get("action") == "completed_early"
+                    and (at := parse_dt(event.get("at"))) is not None
+                    and at.date() == now.date()
+                    for event in s.get("events", [])
+                ):
+                    raise ValueError("Task already completed early today")
                 kind = self.conf(entry)["trigger_type"]
                 if kind not in ("completion", "weekly", "monthly", "yearly"):
                     raise ValueError("Early completion is only supported for completion and fixed schedules")
