@@ -83,3 +83,13 @@ Weekly, monthly and yearly calendar schedules become due at **00:00 local Home A
 - Existing calendar tasks with `calendar_offset_hours` are supported automatically: whole-day offsets (e.g. 24 → 1, 48 → 2) are converted when the task is edited; existing configurations remain usable without recreation. Non-multiples of 24 are rounded down to whole days. Verify the three existing calendar tasks after upgrade.
 - Sensor and numeric triggers still react immediately; snoozes and event-end closing retain their time-based behaviour.
 - The proposed **Open now** dashboard button is **not included** in v0.4.0.
+
+
+## v0.4.1: Complete Upcoming tasks early (development)
+Upcoming tasks with a manual completion option and a completion-relative, weekly, monthly, or yearly trigger display a **Complete early** button. It calls `household_tasks.complete_early` with the task's `entry_id` (or `task`).
+
+- Completion-relative: record the completion timestamp and restart the N-calendar-day countdown from the actual completion date. Example: change bedding on day 9 of a 14-day cycle; next due in 14 days.
+- Weekly/monthly/yearly: satisfy the next scheduled occurrence while retaining the fixed weekday/month/day. Completing next Saturday's task on Wednesday moves the next due date to the following Saturday.
+- Record the action as `completed_early` in history. Do not open the task or announce it as outstanding.
+- Calendar, date-entity, and sensor-triggered tasks do not show early completion. Already-open tasks retain their normal **Done** button.
+- This is experimental and needs testing in Home Assistant, especially across restarts and scheduled date boundaries.
