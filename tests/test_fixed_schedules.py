@@ -53,6 +53,21 @@ class FixedScheduleTests(unittest.TestCase):
         due, _ = fixed_schedule(now, config, None, token)
         self.assertEqual(due, datetime(2026, 12, 13, 0))
 
+    def test_complete_next_month_early(self):
+        now = datetime(2026, 11, 14, 12)
+        config = {"trigger_type": "monthly", "month_day": 20}
+        due, token = fixed_schedule(now, config, None)
+        self.assertEqual(due, datetime(2026, 11, 20))
+        next_due, _ = fixed_schedule(now, config, None, token)
+        self.assertEqual(next_due, datetime(2026, 12, 20))
+
+    def test_complete_next_year_early(self):
+        now = datetime(2026, 11, 14, 12)
+        config = {"trigger_type": "yearly", "year_month": 12, "month_day": 1}
+        due, token = fixed_schedule(now, config, None)
+        next_due, _ = fixed_schedule(now, config, None, token)
+        self.assertEqual(next_due, datetime(2027, 12, 1))
+
     def test_initial_schedule_skips_past(self):
         now = datetime(2026, 11, 13, 12)
         due, _ = fixed_schedule(now, {"trigger_type": "yearly", "year_month": 1, "month_day": 1}, now)

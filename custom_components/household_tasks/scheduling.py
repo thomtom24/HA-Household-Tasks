@@ -1,5 +1,6 @@
 """Pure calendar recurrence calculations for fixed monthly/yearly schedules."""
 from calendar import monthrange
+from datetime import datetime
 
 
 def fixed_schedule(now, config, created, completed_token=None):
@@ -45,6 +46,17 @@ def fixed_schedule(now, config, created, completed_token=None):
     if slot > now:
         period -= interval
         slot = occurrence(period)
+    # Early completion may satisfy the NEXT slot. Skip that occurrence.
+    completed_at = None
+    if completed_token and completed_token.startswith(f"{kind}:"):
+        try:
+            completed_at = datetime.fromisoformat(completed_token[len(kind) + 1:])
+        except ValueError:
+            pass
+    if completed_at is not None and completed_at >= slot:
+        while slot <= completed_at:
+            period += interval
+            slot = occurrence(period)
     token = f"{kind}:{slot.isoformat()}"
     if (completed_token == token or
             (created is not None and created > slot and completed_token is None)):
