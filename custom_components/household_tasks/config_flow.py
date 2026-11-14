@@ -113,6 +113,8 @@ class TaskSteps:
     """Shared steps for creation and editing."""
     def initialize(self, values, editing):
         self.values = {**DEFAULTS, **{k: v for k, v in values.items() if k not in ("pause_in_holiday_mode", "pause_entities")}}
+        if "calendar_offset_days" not in values and "calendar_offset_hours" in values:
+            self.values["calendar_offset_days"] = int(values["calendar_offset_hours"]) // 24
         self.editing = editing
 
     async def async_step_details(self, user_input=None):
