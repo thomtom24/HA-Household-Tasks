@@ -1,7 +1,7 @@
 {
   "domain": "household_tasks",
   "name": "Household Tasks",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "documentation": "https://github.com/thomtom24/HA-Household-Tasks",
   "issue_tracker": "https://github.com/thomtom24/HA-Household-Tasks/issues",
   "codeowners": [],
