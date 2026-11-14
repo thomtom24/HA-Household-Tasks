@@ -12,6 +12,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 from .scheduling import fixed_schedule
+from .date_rules import completion_due_date, offset_due_date, legacy_calendar_days
 from .const import DOMAIN, PLATFORMS, DEFAULTS
 
 def parse_dt(value):
@@ -34,13 +35,6 @@ def local_midnight(value):
     else:
         day = value
     return datetime.combine(day, datetime_time.min, dt_util.get_default_time_zone())
-
-
-def calendar_offset_days(config):
-    """Preserve existing hour-based offsets until a task is edited."""
-    if "calendar_offset_days" in config:
-        return int(config["calendar_offset_days"])
-    return int(config.get("calendar_offset_hours", 24)) // 24
 
 
 def compare(value, op, threshold):
@@ -140,7 +134,7 @@ class Engine:
         if events is None:
             return None, None, False, None
         match = str(c.get("calendar_match", "")).casefold().strip()
-        offset = timedelta(days=calendar_offset_days({**entry.data, **entry.options}))
+        offset = timedelta(days=legacy_calendar_days({**entry.data, **entry.options}))
         candidates = []
         for event in events:
             title = str(event.get("summary") or event.get("message") or "")
@@ -151,7 +145,7 @@ class Engine:
             if not start:
                 continue
             token = "calendar:" + start.isoformat() + ":" + title
-            candidates.append((local_midnight(start.date() - offset), token, start, end))
+            candidates.append((local_midnight(offset_due_date(start.date(), offset.days)), token, start, end))
         candidates.sort(key=lambda item: item[0])
         # Keep an open task tied to its original event, even when the
         # calendar starts advertising a later collection.
@@ -179,7 +173,7 @@ class Engine:
             completed = parse_dt(s.get("last_completed"))
             base = completed or parse_dt(s["created"]) or now
             first_due = parse_dt(c.get("first_due_date")) if not completed else None
-            due = local_midnight(first_due) if first_due else local_midnight(base + timedelta(days=int(c["interval_days"])))
+            due = local_midnight(first_due) if first_due else local_midnight(completion_due_date(base.date(), c["interval_days"]))
             token = "completion:" + (base.isoformat() if completed or not first_due else "initial:" + first_due.isoformat())
             active = now >= due
         elif kind in ("monthly", "yearly"):
@@ -210,7 +204,7 @@ class Engine:
                 raw = entity.attributes.get("date") or entity.attributes.get("timestamp")
             date = parse_dt(raw)
             if date:
-                due = local_midnight(date.date() - timedelta(days=int(c["offset_days"])))
+                due = local_midnight(offset_due_date(date.date(), c["offset_days"]))
                 token = "date:" + date.isoformat()
                 active = now >= due
         elif kind in ("numeric", "state"):
