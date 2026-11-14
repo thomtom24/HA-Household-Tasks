@@ -2,7 +2,7 @@
 
 Experimental Home Assistant custom integration for rule-driven household task tracking.
 
-**Development status: v0.2.6 (testing). Do not rely on it for critical safety or MOT reminders until tested.**
+**Development status: v0.4.0 candidate (testing). Do not rely on it for critical safety or MOT reminders until tested.**
 
 ## Features
 - One task per Home Assistant integration configuration entry; edit through integration options.
@@ -71,3 +71,15 @@ For **Time since last completion** tasks, the optional **First due date** field 
 Choose **Monthly schedule** or **Yearly schedule** in the opening trigger. Monthly schedules specify a day (1–31), and repeat interval in months (1 = monthly, 3 = quarterly, 6 = twice yearly). Yearly schedules specify month (1–12), day (1–31), and repeat interval in years. Days beyond the end of a month are clamped to the month's last day; 29 February uses 28 February in non-leap years. Dates stay fixed after late completion, unlike **Time since last completion**. Open overdue tasks remain open until completed. The repeat interval is anchored to calendar year 2000 (January 2000 for monthly, year 2000 for yearly). The first occurrence for a newly created task is the next scheduled occurrence at or after creation.
 
 Weekly, monthly and yearly calendar schedules become due at **00:00 local Home Assistant time**. The time is not configurable. Existing saved hour/minute settings are ignored for these calendar schedules.
+
+
+## v0.4.0: Date-only scheduling (testing)
+- Scheduled tasks become due at local midnight on their due **date**, not at the time of their previous completion.
+- Completing an every-7-days task on Tuesday evening makes it due the following Tuesday at 00:00 local time.
+- Weekly, monthly and yearly tasks retain their existing fixed calendar dates.
+- Calendar triggers now use **Days before event** (integer calendar days); event start time is ignored for determining when the task opens. Calendar event-end auto-closing still follows the event's actual end timestamp.
+- Date-entity triggers likewise use the date, not the entity's time of day.
+- The dashboard displays dates without times. Exact completion/opening timestamps remain in history.
+- Existing calendar tasks with `calendar_offset_hours` are supported automatically: whole-day offsets (e.g. 24 → 1, 48 → 2) are converted when the task is edited; existing configurations remain usable without recreation. Non-multiples of 24 are rounded down to whole days. Verify the three existing calendar tasks after upgrade.
+- Sensor and numeric triggers still react immediately; snoozes and event-end closing retain their time-based behaviour.
+- The proposed **Open now** dashboard button is **not included** in v0.4.0.

@@ -36,13 +36,7 @@ class HouseholdTasksCard extends HTMLElement {
         order === 'MDY' ? [fields.month,fields.day,fields.year].join('/') :
         order === 'YMD' ? [fields.year,fields.month,fields.day].join('-') :
         new Intl.DateTimeFormat(language,{year:'numeric',month:'2-digit',day:'2-digit'}).format(date);
-      const hour12 = locale.time_format === '12';
-      const hour24 = locale.time_format === '24';
-      const timePart = new Intl.DateTimeFormat(language,{
-        hour:'numeric',minute:'2-digit',
-        ...(hour12 || hour24 ? {hour12:hour12} : {})
-      }).format(date);
-      return datePart + ', ' + timePart;
+      return datePart;
     };
     const dueInfo = t => {
       const raw = t.state === 'open' ? (t.dueAtOpen || t.opened) : t.due;
