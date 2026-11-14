@@ -4,6 +4,12 @@ complete:
       example: "entry_id"
     task:
       example: "change_bedding"
+complete_early:
+  fields:
+    entry_id:
+      example: "entry_id"
+    task:
+      example: "change_bedding"
 reopen:
   fields:
     entry_id:
