@@ -108,7 +108,7 @@ class HouseholdTasksCard extends HTMLElement {
         if (button.disabled) return;
         const task = tasks.find(t => t.entry === button.dataset.early);
         if (!task) return;
-        const confirmed = window.confirm(
+        const confirmed = globalThis.confirm(
           'Complete "' + task.name + '" early?\n\n' +
           'This records a completion now and updates its next due date.'
         );
@@ -120,7 +120,7 @@ class HouseholdTasksCard extends HTMLElement {
           });
         } catch (error) {
           button.disabled = false;
-          window.alert('Could not complete task early: ' + (error?.message || String(error)));
+          globalThis.alert('Could not complete task early: ' + (error?.message || String(error)));
         }
       };
     });

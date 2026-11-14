@@ -265,6 +265,17 @@ class Engine:
                 warnings.append(f"{label}: {entity_id} is {state.state}")
         return warnings
 
+    @staticmethod
+    def completed_early_today(state, now):
+        """Check persisted history in Home Assistant's local calendar day."""
+        today = dt_util.as_local(now).date()
+        return any(
+            event.get("action") == "completed_early"
+            and (at := parse_dt(event.get("at"))) is not None
+            and at.date() == today
+            for event in state.get("events", [])
+        )
+
     async def evaluate(self, entry):
         async with self.lock:
             now = dt_util.now()
@@ -274,12 +285,7 @@ class Engine:
             else:
                 due, token, active, end = self.calculate(entry, now)
             old = dict(s)
-            s["completed_early_today"] = any(
-                event.get("action") == "completed_early"
-                and (at := parse_dt(event.get("at"))) is not None
-                and at.date() == now.date()
-                for event in s.get("events", [])
-            )
+            s["completed_early_today"] = self.completed_early_today(s, now)
             s["entity_warnings"] = self.entity_warnings(entry)
             s["due"] = due.isoformat() if due else None
             if end is not None:
@@ -338,13 +344,7 @@ class Engine:
                 raise ValueError("This task is configured for automatic completion only")
             if action == "complete_early":
                 # Block duplicate early completions on the same local day.
-                last = parse_dt(s.get("last_completed"))
-                if last and last.date() == now.date() and any(
-                    event.get("action") == "completed_early"
-                    and (at := parse_dt(event.get("at"))) is not None
-                    and at.date() == now.date()
-                    for event in s.get("events", [])
-                ):
+                if self.completed_early_today(s, now):
                     raise ValueError("Task already completed early today")
                 kind = self.conf(entry)["trigger_type"]
                 if kind not in ("completion", "weekly", "monthly", "yearly"):
@@ -359,6 +359,7 @@ class Engine:
                 self._finish(s, now, "completed_early")
                 s["completed_token"] = token
                 s["next_token"] = token
+                s["completed_early_today"] = True
             elif action in ("complete", "skip"):
                 if not s.get("open"):
                     return
