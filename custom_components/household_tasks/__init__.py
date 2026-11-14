@@ -274,6 +274,12 @@ class Engine:
             else:
                 due, token, active, end = self.calculate(entry, now)
             old = dict(s)
+            s["completed_early_today"] = any(
+                event.get("action") == "completed_early"
+                and (at := parse_dt(event.get("at"))) is not None
+                and at.date() == now.date()
+                for event in s.get("events", [])
+            )
             s["entity_warnings"] = self.entity_warnings(entry)
             s["due"] = due.isoformat() if due else None
             if end is not None:
