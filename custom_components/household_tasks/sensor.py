@@ -1,5 +1,7 @@
 """Task status sensors for Home Assistant."""
 from homeassistant.components.sensor import SensorEntity
+from homeassistant.util import dt as dt_util
+from . import parse_dt
 from .const import DOMAIN
 
 class TaskStatusSensor(SensorEntity):
@@ -19,7 +21,15 @@ class TaskStatusSensor(SensorEntity):
     def extra_state_attributes(self):
         s = self.engine.state(self.entry)
         c = self.engine.conf(self.entry)
+        today = dt_util.now().date()
+        completed_early_today = any(
+            event.get("action") == "completed_early"
+            and (at := parse_dt(event.get("at"))) is not None
+            and at.date() == today
+            for event in s.get("events", [])
+        )
         return {
+            "completed_early_today": completed_early_today,
             "task_entry_id": self.entry.entry_id,
             "friendly_name": c.get("friendly_name") or self.entry.title,
             "category": c.get("category"), "area_id": c.get("area_id"),
