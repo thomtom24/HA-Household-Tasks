@@ -25,6 +25,24 @@ def parse_dt(value):
     except (ValueError, TypeError, OverflowError):
         return None
 
+def local_midnight(value):
+    """Return local midnight for a date or datetime, independent of its time."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        day = dt_util.as_local(value).date() if value.tzinfo else value.date()
+    else:
+        day = value
+    return datetime.combine(day, datetime_time.min, dt_util.get_default_time_zone())
+
+
+def calendar_offset_days(config):
+    """Preserve existing hour-based offsets until a task is edited."""
+    if "calendar_offset_days" in config:
+        return int(config["calendar_offset_days"])
+    return int(config.get("calendar_offset_hours", 24)) // 24
+
+
 def compare(value, op, threshold):
     try:
         x, y = float(value), float(threshold)
@@ -122,7 +140,7 @@ class Engine:
         if events is None:
             return None, None, False, None
         match = str(c.get("calendar_match", "")).casefold().strip()
-        offset = timedelta(hours=int(c.get("calendar_offset_hours", 24)))
+        offset = timedelta(days=calendar_offset_days({**entry.data, **entry.options}))
         candidates = []
         for event in events:
             title = str(event.get("summary") or event.get("message") or "")
@@ -133,7 +151,7 @@ class Engine:
             if not start:
                 continue
             token = "calendar:" + start.isoformat() + ":" + title
-            candidates.append((start - offset, token, start, end))
+            candidates.append((local_midnight(start) - offset, token, start, end))
         candidates.sort(key=lambda item: item[0])
         # Keep an open task tied to its original event, even when the
         # calendar starts advertising a later collection.
@@ -161,7 +179,7 @@ class Engine:
             completed = parse_dt(s.get("last_completed"))
             base = completed or parse_dt(s["created"]) or now
             first_due = parse_dt(c.get("first_due_date")) if not completed else None
-            due = first_due or (base + timedelta(days=int(c["interval_days"])))
+            due = local_midnight(first_due) if first_due else local_midnight(base + timedelta(days=int(c["interval_days"])))
             token = "completion:" + (base.isoformat() if completed or not first_due else "initial:" + first_due.isoformat())
             active = now >= due
         elif kind in ("monthly", "yearly"):
@@ -192,7 +210,7 @@ class Engine:
                 raw = entity.attributes.get("date") or entity.attributes.get("timestamp")
             date = parse_dt(raw)
             if date:
-                due = date - timedelta(days=int(c["offset_days"]))
+                due = local_midnight(date) - timedelta(days=int(c["offset_days"]))
                 token = "date:" + date.isoformat()
                 active = now >= due
         elif kind in ("numeric", "state"):
