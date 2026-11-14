@@ -84,7 +84,7 @@ class HouseholdTasksCard extends HTMLElement {
       ${tasks.some(t=>t.warnings.length)?`<div class="health-alert">⚠ ${tasks.filter(t=>t.warnings.length).length} task(s) have missing or unavailable entities. Check the warnings below or task status sensors.</div>`:""}
       ${visible.length ? visible.map(t=>`<div class="task status-${status(t).key}"><div class="task-body"><div class="task-title"><b>${esc(t.name)}</b><span class="status-pill">${esc(status(t).label)}</span></div><small>${esc(t.category||'')}
       ${dueInfo(t)?' · '+esc(dueInfo(t)):''}</small>${t.warnings.length?`<small class="warning">⚠ ${esc(t.warnings.join('; '))}</small>`:''}</div>
-      ${t.manualAllowed && (t.state==='open' || (t.state==='closed' && ['completion','weekly','monthly','yearly'].includes(t.triggerType) && t.due))?`<button data-${t.state==='open'?'complete':'early'}="${esc(t.entry)}">✓ ${t.state==='open'?'Done':'Complete early'}</button>`:''}</div>`).join(''):'<p>No tasks in this view.</p>'}
+      ${t.manualAllowed && (t.state==='open' || (t.state==='closed' && ['completion','weekly','monthly','yearly'].includes(t.triggerType) && t.due))?`<button data-${t.state==='open'?'complete':'early'}="${esc(t.entry)}" ${t.state==='closed' && t.completedEarlyToday ? 'disabled aria-disabled="true"' : ''}>✓ ${t.state==='open'?'Done':(t.completedEarlyToday?'Completed today':'Complete early')}</button>`:''}</div>`).join(''):'<p>No tasks in this view.</p>'}
       </div></ha-card><style>.wrap{padding:16px}h2{margin:0 0 16px;font-size:20px}
       .tabs{display:flex;gap:8px;margin-bottom:12px}.tabs button,.task button{border:1px solid var(--divider-color);
       border-radius:8px;padding:9px;background:var(--card-background-color);color:var(--primary-text-color);cursor:pointer}
