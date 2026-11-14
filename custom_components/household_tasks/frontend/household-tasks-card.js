@@ -1,6 +1,12 @@
 class HouseholdTasksCard extends HTMLElement {
   setConfig(config) { this.config = config; this.filter = this.filter || 'open'; this.upcomingRange = this.upcomingRange || 'all'; this.render(); }
-  set hass(hass) { this._hass = hass; this.render(); }
+  set hass(hass) {
+    this._hass = hass;
+    // Preserve the native select while its Android picker is open.
+    // HA frequently pushes state updates, which would otherwise replace it.
+    if (this._rangePickerActive) { this._pendingRender = true; return; }
+    this.render();
+  }
   getCardSize() { return 5; }
   render() {
     if (!this._hass || !this.config) return;
@@ -100,7 +106,22 @@ class HouseholdTasksCard extends HTMLElement {
       .task button{flex-shrink:0}.health-alert,.warning{color:var(--warning-color,#c77b00)}.health-alert{margin:8px 0;padding:8px;border:1px solid currentColor;border-radius:8px;font-size:13px}small{display:block;color:var(--secondary-text-color);margin-top:4px}</style>`;
     this.shadowRoot.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{this.filter=b.dataset.tab;this.render()});
     const rangeSelector = this.shadowRoot.querySelector('#upcoming-range');
-    if (rangeSelector) rangeSelector.onchange = event => { this.upcomingRange = event.target.value; this.render(); };
+    if (rangeSelector) {
+      rangeSelector.addEventListener('focus', () => { this._rangePickerActive = true; });
+      rangeSelector.addEventListener('change', event => {
+        this.upcomingRange = event.target.value;
+        this._rangePickerActive = false;
+        this._pendingRender = false;
+        this.render();
+      });
+      rangeSelector.addEventListener('blur', () => {
+        this._rangePickerActive = false;
+        if (this._pendingRender) {
+          this._pendingRender = false;
+          this.render();
+        }
+      });
+    }
     this.shadowRoot.querySelectorAll('[data-complete]').forEach(b=>b.onclick=()=>this._hass.callService('household_tasks','complete',{entry_id:b.dataset.complete}));
   }
 }
