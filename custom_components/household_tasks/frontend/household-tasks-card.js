@@ -10,6 +10,7 @@ class HouseholdTasksCard extends HTMLElement {
       .map(([id,s]) => ({id, name:(s.attributes.friendly_name || id).replace(/\s+status$/i, ''), due:s.attributes.due, dueAtOpen:s.attributes.due_at_open, opened:s.attributes.last_opened,
         entry:s.attributes.task_entry_id, state:s.state, category:s.attributes.category, triggerType:s.attributes.trigger_type,
         warnings:Array.isArray(s.attributes.entity_warnings)?s.attributes.entity_warnings:[],
+        completedEarlyToday:s.attributes.completed_early_today === true,
         manualAllowed:s.attributes.manual_completion_allowed === true || (s.attributes.manual_completion_allowed == null && (!s.attributes.close_type || s.attributes.close_type === "manual" || s.attributes.close_type.startsWith("manual_or_")))}));
     const now = new Date();
     const endOfRange = new Date(now);
@@ -83,7 +84,7 @@ class HouseholdTasksCard extends HTMLElement {
       ${tasks.some(t=>t.warnings.length)?`<div class="health-alert">⚠ ${tasks.filter(t=>t.warnings.length).length} task(s) have missing or unavailable entities. Check the warnings below or task status sensors.</div>`:""}
       ${visible.length ? visible.map(t=>`<div class="task status-${status(t).key}"><div class="task-body"><div class="task-title"><b>${esc(t.name)}</b><span class="status-pill">${esc(status(t).label)}</span></div><small>${esc(t.category||'')}
       ${dueInfo(t)?' · '+esc(dueInfo(t)):''}</small>${t.warnings.length?`<small class="warning">⚠ ${esc(t.warnings.join('; '))}</small>`:''}</div>
-      ${t.manualAllowed && (t.state==='open' || (t.state==='closed' && ['completion','weekly','monthly','yearly'].includes(t.triggerType) && t.due))?`<button data-${t.state==='open'?'complete':'early'}="${esc(t.entry)}">✓ ${t.state==='open'?'Done':'Complete early'}</button>`:''}</div>`).join(''):'<p>No tasks in this view.</p>'}
+      ${t.manualAllowed && (t.state==='open' || (t.state==='closed' && ['completion','weekly','monthly','yearly'].includes(t.triggerType) && t.due))?`<button data-${t.state==='open'?'complete':'early'}="${esc(t.entry)}" ${t.state==='closed' && t.completedEarlyToday ? 'disabled aria-disabled="true"' : ''}>✓ ${t.state==='open'?'Done':(t.completedEarlyToday?'Completed today':'Complete early')}</button>`:''}</div>`).join(''):'<p>No tasks in this view.</p>'}
       </div></ha-card><style>.wrap{padding:16px}h2{margin:0 0 16px;font-size:20px}
       .tabs{display:flex;gap:8px;margin-bottom:12px}.tabs button,.task button{border:1px solid var(--divider-color);
       border-radius:8px;padding:9px;background:var(--card-background-color);color:var(--primary-text-color);cursor:pointer}
@@ -97,12 +98,32 @@ class HouseholdTasksCard extends HTMLElement {
       .range-filter{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px}
       .range-filter label{font-size:13px;color:var(--secondary-text-color)}
       .range-filter select{background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:8px;padding:7px 10px;font:inherit}
-      .task button{flex-shrink:0}.health-alert,.warning{color:var(--warning-color,#c77b00)}.health-alert{margin:8px 0;padding:8px;border:1px solid currentColor;border-radius:8px;font-size:13px}small{display:block;color:var(--secondary-text-color);margin-top:4px}</style>`;
+      .task button{flex-shrink:0}.task button:disabled{opacity:.55;cursor:default}.health-alert,.warning{color:var(--warning-color,#c77b00)}.health-alert{margin:8px 0;padding:8px;border:1px solid currentColor;border-radius:8px;font-size:13px}small{display:block;color:var(--secondary-text-color);margin-top:4px}</style>`;
     this.shadowRoot.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{this.filter=b.dataset.tab;this.render()});
     const rangeSelector = this.shadowRoot.querySelector('#upcoming-range');
     if (rangeSelector) rangeSelector.onchange = event => { this.upcomingRange = event.target.value; this.render(); };
     this.shadowRoot.querySelectorAll('[data-complete]').forEach(b=>b.onclick=()=>this._hass.callService('household_tasks','complete',{entry_id:b.dataset.complete}));
-    this.shadowRoot.querySelectorAll('[data-early]').forEach(b=>b.onclick=()=>this._hass.callService('household_tasks','complete_early',{entry_id:b.dataset.early}));
+    this.shadowRoot.querySelectorAll('[data-early]').forEach(button => {
+      button.onclick = async () => {
+        if (button.disabled) return;
+        const task = tasks.find(t => t.entry === button.dataset.early);
+        if (!task) return;
+        const confirmed = window.confirm(
+          'Complete "' + task.name + '" early?\n\n' +
+          'This records a completion now and updates its next due date.'
+        );
+        if (!confirmed) return;
+        button.disabled = true; // Prevent double taps while awaiting Home Assistant.
+        try {
+          await this._hass.callService('household_tasks', 'complete_early', {
+            entry_id: button.dataset.early
+          });
+        } catch (error) {
+          button.disabled = false;
+          window.alert('Could not complete task early: ' + (error?.message || String(error)));
+        }
+      };
+    });
   }
 }
 customElements.define('household-tasks-card',HouseholdTasksCard);

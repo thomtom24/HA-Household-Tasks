@@ -85,6 +85,9 @@ Weekly, monthly and yearly calendar schedules become due at **00:00 local Home A
 - The proposed **Open now** dashboard button is **not included** in v0.4.0.
 
 
+## v0.4.2: Completed today protection (development)
+After an Upcoming task is completed early, its button shows **Completed today** and is disabled until the next local calendar day. The backend also rejects repeated early-completion service calls for that task on the same day. Its recurrence is still based on the actual completion date. The sensor attribute `completed_early_today` refreshes on the minute tick so the button can become available again after midnight.
+
 ## v0.4.1: Complete Upcoming tasks early (development)
 Upcoming tasks with a manual completion option and a completion-relative, weekly, monthly, or yearly trigger display a **Complete early** button. It calls `household_tasks.complete_early` with the task's `entry_id` (or `task`).
 
