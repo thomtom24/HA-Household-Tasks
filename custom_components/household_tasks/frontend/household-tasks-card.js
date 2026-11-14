@@ -10,6 +10,7 @@ class HouseholdTasksCard extends HTMLElement {
       .map(([id,s]) => ({id, name:(s.attributes.friendly_name || id).replace(/\s+status$/i, ''), due:s.attributes.due, dueAtOpen:s.attributes.due_at_open, opened:s.attributes.last_opened,
         entry:s.attributes.task_entry_id, state:s.state, category:s.attributes.category, triggerType:s.attributes.trigger_type,
         warnings:Array.isArray(s.attributes.entity_warnings)?s.attributes.entity_warnings:[],
+        completedEarlyToday:s.attributes.completed_early_today === true,
         manualAllowed:s.attributes.manual_completion_allowed === true || (s.attributes.manual_completion_allowed == null && (!s.attributes.close_type || s.attributes.close_type === "manual" || s.attributes.close_type.startsWith("manual_or_")))}));
     const now = new Date();
     const endOfRange = new Date(now);
@@ -97,7 +98,7 @@ class HouseholdTasksCard extends HTMLElement {
       .range-filter{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px}
       .range-filter label{font-size:13px;color:var(--secondary-text-color)}
       .range-filter select{background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:8px;padding:7px 10px;font:inherit}
-      .task button{flex-shrink:0}.health-alert,.warning{color:var(--warning-color,#c77b00)}.health-alert{margin:8px 0;padding:8px;border:1px solid currentColor;border-radius:8px;font-size:13px}small{display:block;color:var(--secondary-text-color);margin-top:4px}</style>`;
+      .task button{flex-shrink:0}.task button:disabled{opacity:.55;cursor:default}.health-alert,.warning{color:var(--warning-color,#c77b00)}.health-alert{margin:8px 0;padding:8px;border:1px solid currentColor;border-radius:8px;font-size:13px}small{display:block;color:var(--secondary-text-color);margin-top:4px}</style>`;
     this.shadowRoot.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{this.filter=b.dataset.tab;this.render()});
     const rangeSelector = this.shadowRoot.querySelector('#upcoming-range');
     if (rangeSelector) rangeSelector.onchange = event => { this.upcomingRange = event.target.value; this.render(); };
