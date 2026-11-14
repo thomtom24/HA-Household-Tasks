@@ -1,98 +1,117 @@
-# HA Household Tasks
+# Household Tasks for Home Assistant
 
-Experimental Home Assistant custom integration for rule-driven household task tracking.
+A custom Home Assistant integration for tracking recurring household jobs and tasks opened by calendar events or entity conditions. Tasks stay open until their configured completion condition is met. Includes a Lovelace card with **Open** and **Upcoming** views.
 
-**Development status: v0.4.0 candidate (testing). Do not rely on it for critical safety or MOT reminders until tested.**
+**Current development version: 0.4.2.** This is experimental software; test it before relying on important reminders. Version 0.4.2 is on a development branch and is not yet a merged release.
 
 ## Features
-- One task per Home Assistant integration configuration entry; edit through integration options.
-- Completion-relative intervals and fixed weekly recurrence.
-- Date entity, numeric entity, state entity, and basic calendar entity triggers.
-- Manual completion, skip, snooze, reopen, and entity/calendar-based auto completion.
-- Home Assistant area selector, including no area (N/A).
-- Persistent history in Home Assistant storage.
-- `sensor.household_tasks_open_names`: count as state, `tasks` and `names` as lists, and optional `announcement` text.
-- Dashboard card bundled in `custom_components/household_tasks/frontend/household-tasks-card.js` and served by the integration.
 
-## Installation (development testing)
-1. In HACS, add `https://github.com/thomtom24/HA-Household-Tasks` as a custom **Integration** repository.
-2. Download the integration and restart Home Assistant.
-3. Go to Settings → Devices & services → Add integration → Household Tasks.
-4. Create a task. Each task is a separate configuration entry.
-5. In Home Assistant, open **Settings → Dashboards → three-dot menu → Resources** (or your dashboard's resource editor). Add a **JavaScript module** resource with URL:
-   `/household_tasks/household-tasks-card.js`
-6. If you previously installed `/local/household-tasks-card.js`, **remove that old resource** to avoid registering the same custom card twice. The old file in `/config/www` may be deleted after verifying the new card works.
-7. Add a manual dashboard card:
+- Create and edit tasks through **Settings → Devices & services → Household Tasks**. Each task is a separate integration entry.
+- Assign a friendly name, category and optional Home Assistant area.
+- Recurring tasks based on the date of their last completion, or fixed weekly, monthly and yearly schedules.
+- Tasks triggered by Home Assistant calendar events, date entities, numeric thresholds or entity states.
+- Manual completion, early completion for eligible upcoming tasks, skip, snooze and reopen actions.
+- Optional automatic closing when an entity meets a condition, a trigger becomes inactive or a calendar event ends.
+- Persistent task state and completion history, including exact timestamps.
+- Task status sensors, missing/unavailable entity warnings and a summary sensor suitable for announcements.
+
+## Installation
+
+1. In **HACS**, add `https://github.com/thomtom24/HA-Household-Tasks` as a custom repository of type **Integration**.
+2. Install Household Tasks and restart Home Assistant.
+3. Go to **Settings → Devices & services → Add integration → Household Tasks** to create your first task. Add additional tasks by adding another Household Tasks integration entry.
+4. Register the bundled dashboard card under **Settings → Dashboards → Resources** as a **JavaScript module**:
+
+   ```text
+   /household_tasks/household-tasks-card.js?v=0.4.2
+   ```
+
+5. Add a manual dashboard card:
+
+   ```yaml
+   type: custom:household-tasks-card
+   title: Household Tasks
+   ```
+
+The card is served directly by the integration; you do not need to copy the JavaScript into `/config/www`. Remove any older duplicate `/local/household-tasks-card.js` resource. When updating the integration, restart Home Assistant and change the resource URL's `?v=` value to refresh browser and Android WebView caches.
+
+**Development branches:** HACS normally installs from the repository's selected/default release source, not automatically from an open pull request. Make sure the installed integration actually contains the desired version before testing its card or services.
+
+## Creating tasks
+
+Choose an **opening trigger** and a **closing condition** when configuring each task.
+
+| Opening trigger | How it works | Example |
+| --- | --- | --- |
+| Time since last completion | Due at local midnight, N calendar days after completion. Optional first due date; otherwise first due is calculated from task creation. | Change bedding every 14 days |
+| Weekly schedule | Due at local midnight on the chosen weekday. | Weekly cleaning |
+| Monthly schedule | Due on a chosen day of the month. Supports intervals such as every 3 months. | Clean washing machine filter |
+| Yearly schedule | Due on a chosen month/day, optionally every N years. | Annual maintenance |
+| Calendar event | Match an event title by case-insensitive substring and open at midnight N days before its start date. | Food recycling collection |
+| Date from an entity | Open at midnight on the entity's date, adjusted by the configured day offset. | Date-based renewal |
+| Numeric sensor threshold | Open when a numeric entity crosses the selected comparison. | Battery below 15% |
+| Entity state | Open when an entity reaches a configured state. | Device reports a fault |
+
+Fixed weekly, monthly and yearly schedules retain their calendar cadence when a task is completed late or early. Monthly/yearly dates past the end of a month are clamped to its final day (for example, 29 February becomes 28 February in a non-leap year). Monthly/yearly interval alignment is calendar-based.
+
+Calendar tasks use Home Assistant's `calendar.get_events` action to look ahead up to 90 days and cache results for approximately five minutes. Use a separate task with a different event-title filter for each collection type. Calendar tasks configured with older hour-based offsets are supported using whole-day equivalents.
+
+**Closing conditions** include manual completion; an entity reaching a specified state or numeric condition; the calendar event ending; the trigger becoming inactive (for numeric/state triggers); and supported manual-or-automatic combinations. Automatic-only tasks cannot be manually completed.
+
+## Dashboard and early completion
+
+The **Open** tab lists currently outstanding tasks and offers **Done** when manual completion is allowed. The **Upcoming** tab lists scheduled closed tasks, with a time-range filter (7 days, 14 days, 1 month or All).
+
+For manually completable, completion-relative or fixed weekly/monthly/yearly tasks, Upcoming shows **Complete early**. Selecting it opens a confirmation prompt before any action is recorded. Cancel leaves the task unchanged.
+
+- **Completion-relative example:** Complete a 14-day bedding task on day 9; its next due date becomes 14 calendar days after that early completion.
+- **Fixed schedule example:** Complete next Saturday's task on Wednesday; that occurrence is satisfied and the next due date remains the following scheduled Saturday.
+- After an early completion, the button displays **Completed today** and is disabled for the rest of the local calendar day. The backend also rejects duplicate early completions on that date.
+- Calendar, date-entity, numeric and state-triggered tasks do not offer Complete early.
+
+Task dates are displayed without times in the card. Completion/opening history retains exact timestamps. Tasks with missing or unavailable entity dependencies show warnings.
+
+## Home Assistant actions
+
+The integration registers these actions under the `household_tasks` domain:
+
+| Action | Purpose |
+| --- | --- |
+| `household_tasks.complete` | Complete an open task when manual completion is permitted |
+| `household_tasks.complete_early` | Complete an eligible Upcoming task before its due date |
+| `household_tasks.reopen` | Reopen a task |
+| `household_tasks.skip` | Skip an open task |
+| `household_tasks.snooze` | Snooze an open task by a number of days (default 1) |
+
+Specify either `entry_id` or `task` (the task's configured identifier/name, as accepted by the integration). For example:
+
 ```yaml
-type: custom:household-tasks-card
-title: Household Tasks
-```
-8. Refresh your browser after the upgrade. The bundled card is installed by HACS with the integration and is served by Home Assistant after a restart. You do **not** need to copy the JavaScript file on future releases. Browser cache headers are disabled for this route.
-
-**Why is resource setup manual?** The integration serves the card but deliberately does not modify dashboard resource settings automatically. You only need to register the URL once; later HACS updates replace the bundled file.
-
-## Using the open task list in automations
-Use:
-```jinja2
-{{ state_attr('sensor.household_tasks_open_names', 'announcement') }}
-```
-Or retrieve the list:
-```jinja2
-{{ state_attr('sensor.household_tasks_open_names', 'names') }}
+action: household_tasks.complete_early
+data:
+  task: change_bedding
 ```
 
-## v0.2.3 change
-- Removed holiday-mode pausing from task configuration, scheduling, status sensors and task-list filtering. Existing tasks retain their open/closed state and recurrence history. Previously saved pause settings are ignored; editing a task removes them from its options.
+## Status sensors and announcements
 
-## Entity renames and availability (v0.2.7 development)
-- When Home Assistant reports an entity ID rename through its entity registry, Household Tasks updates task opening and closing entity references automatically. Renaming only the friendly name needs no update.
-- Missing, `unknown`, and `unavailable` dependencies are exposed on each task status sensor as `entity_warnings` and `has_entity_warning`, and flagged in the bundled card.
-- A missing or unavailable sensor does not by itself complete a task; the existing task state and history remain intact. Check the warning if an entity is removed or replaced rather than renamed.
-- Numeric comparisons support `<`, `<=`, `>`, `>=`, and `=`. Numeric/state tasks can close when their trigger condition becomes false, with or without manual completion.
+Each task exposes a status sensor whose state is `open` or `closed`. Attributes include its due date, last completion, history, trigger type, completion eligibility and entity warnings. The `completed_early_today` attribute supports the dashboard's disabled button state.
 
-## Important limitations
-- Calendar lookahead uses Home Assistant's calendar.get_events service; test with your calendar provider before relying on reminders.
-- The task editor uses conditional multi-step configuration screens.
-- Weekly tasks have a single weekday setting; multiple weekday recurrence is not implemented.
-- Some edge cases involving date changes, time zones, and sensor rearming need live Home Assistant testing.
-- The Lovelace card resource URL needs to be added manually once.
-- There is no automated test suite or validated Home Assistant runtime compatibility yet.
+The summary entity `sensor.household_tasks_open_names` has the number of open tasks as its state and provides `names`, `tasks` and `announcement` attributes. To speak the current open-task announcement with Alexa Media Player, for example:
 
-Source is versioned in GitHub; v0.2.6 is not released until merged and tagged.
+```yaml
+action: notify.alexa_media_front_room
+data:
+  message: "{{ state_attr('sensor.household_tasks_open_names', 'announcement') }}"
+  data:
+    type: tts
+```
 
+## Notes and limitations
 
-### Multiple event types in one calendar (v0.2.5 development)
-Create one Household Task per event type, using the same Home Assistant calendar entity and a distinct **Calendar event match** filter. The match is case-insensitive and checks whether the event title contains the configured text. For example, with `calendar.rubbish_collection_2`, use `Rubbish Collection`, `Recycling Collection`, and `Food Recycling` for three separate tasks. Set **Hours before event** to `24` for a reminder starting at midnight the previous day for all-day events. The integration requests events up to 90 days ahead using Home Assistant's `calendar.get_events` service, and caches responses for five minutes. A task can be completed manually, automatically when its matched event ends, or either. This is development code and should be tested before release.
+- The integration uses Home Assistant's local time zone for scheduled dates; time-based sensor triggers respond immediately.
+- Weekly schedules support one weekday per task.
+- Calendar behaviour depends on the connected calendar provider and its event data.
+- Changes to an entity ID made through Home Assistant's entity registry are followed automatically; missing or unavailable entities generate warnings rather than silently completing tasks.
+- The dashboard resource must be registered manually.
+- This development version has not been fully validated against a live Home Assistant installation. Test early completion, recurrence boundaries, Android confirmation dialogs and restart persistence before relying on it for critical reminders.
 
-## First due date for completion-relative tasks (v0.2.9)
-For **Time since last completion** tasks, the optional **First due date** field sets the initial reminder date (local midnight). Leave it empty to keep the existing behaviour of scheduling the first reminder after the interval from task creation. After the first completion, reminders always recur the configured number of days after the actual completion timestamp. Editing the first due date after a completion does not reset the completed task's recurrence history. An already-open task retains its original opening date until completed.
-
-## Fixed monthly and yearly schedules (v0.3.0)
-Choose **Monthly schedule** or **Yearly schedule** in the opening trigger. Monthly schedules specify a day (1–31), and repeat interval in months (1 = monthly, 3 = quarterly, 6 = twice yearly). Yearly schedules specify month (1–12), day (1–31), and repeat interval in years. Days beyond the end of a month are clamped to the month's last day; 29 February uses 28 February in non-leap years. Dates stay fixed after late completion, unlike **Time since last completion**. Open overdue tasks remain open until completed. The repeat interval is anchored to calendar year 2000 (January 2000 for monthly, year 2000 for yearly). The first occurrence for a newly created task is the next scheduled occurrence at or after creation.
-
-Weekly, monthly and yearly calendar schedules become due at **00:00 local Home Assistant time**. The time is not configurable. Existing saved hour/minute settings are ignored for these calendar schedules.
-
-
-## v0.4.0: Date-only scheduling (testing)
-- Scheduled tasks become due at local midnight on their due **date**, not at the time of their previous completion.
-- Completing an every-7-days task on Tuesday evening makes it due the following Tuesday at 00:00 local time.
-- Weekly, monthly and yearly tasks retain their existing fixed calendar dates.
-- Calendar triggers now use **Days before event** (integer calendar days); event start time is ignored for determining when the task opens. Calendar event-end auto-closing still follows the event's actual end timestamp.
-- Date-entity triggers likewise use the date, not the entity's time of day.
-- The dashboard displays dates without times. Exact completion/opening timestamps remain in history.
-- Existing calendar tasks with `calendar_offset_hours` are supported automatically: whole-day offsets (e.g. 24 → 1, 48 → 2) are converted when the task is edited; existing configurations remain usable without recreation. Non-multiples of 24 are rounded down to whole days. Verify the three existing calendar tasks after upgrade.
-- Sensor and numeric triggers still react immediately; snoozes and event-end closing retain their time-based behaviour.
-- The proposed **Open now** dashboard button is **not included** in v0.4.0.
-
-
-## v0.4.2: Completed today protection (development)
-After an Upcoming task is completed early, its button shows **Completed today** and is disabled until the next local calendar day. The backend also rejects repeated early-completion service calls for that task on the same day. Its recurrence is still based on the actual completion date. The sensor attribute `completed_early_today` refreshes on the minute tick so the button can become available again after midnight.
-
-## v0.4.1: Complete Upcoming tasks early (development)
-Upcoming tasks with a manual completion option and a completion-relative, weekly, monthly, or yearly trigger display a **Complete early** button. It calls `household_tasks.complete_early` with the task's `entry_id` (or `task`).
-
-- Completion-relative: record the completion timestamp and restart the N-calendar-day countdown from the actual completion date. Example: change bedding on day 9 of a 14-day cycle; next due in 14 days.
-- Weekly/monthly/yearly: satisfy the next scheduled occurrence while retaining the fixed weekday/month/day. Completing next Saturday's task on Wednesday moves the next due date to the following Saturday.
-- Record the action as `completed_early` in history. Do not open the task or announce it as outstanding.
-- Calendar, date-entity, and sensor-triggered tasks do not show early completion. Already-open tasks retain their normal **Done** button.
-- This is experimental and needs testing in Home Assistant, especially across restarts and scheduled date boundaries.
+For changes and version history, use the repository's GitHub pull requests, commits and releases rather than this README.
