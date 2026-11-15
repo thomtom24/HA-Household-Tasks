@@ -93,6 +93,37 @@ class Engine:
             "names": names, "tasks": names, "announcement": announcement, "count": len(names)
         })
 
+        # The newest outstanding task is selected by its persisted opening time,
+        # not by its name or the order in which config entries were loaded.
+        open_entries = [e for e in self.entries.values() if self.state(e).get("open")]
+        latest = max(
+            open_entries,
+            key=lambda e: (parse_dt(self.state(e).get("last_opened")) or
+                           datetime.min.replace(tzinfo=dt_util.get_default_time_zone()),
+                           e.entry_id),
+            default=None,
+        )
+        if latest is None:
+            latest_name = "none"
+            latest_attributes = {
+                "friendly_name": "Household Tasks Latest Open",
+                "icon": "mdi:clipboard-text-clock-outline",
+                "task_name": None,
+                "opened_at": None, "open_count": 0,
+            }
+        else:
+            latest_name = self.conf(latest).get("friendly_name") or latest.title
+            latest_attributes = {
+                "friendly_name": "Household Tasks Latest Open",
+                "icon": "mdi:clipboard-text-clock-outline",
+                "task_name": latest_name,
+                "opened_at": self.state(latest).get("last_opened"),
+                "open_count": len(open_entries),
+            }
+        self.hass.states.async_set(
+            "sensor.household_tasks_latest_open", latest_name, latest_attributes
+        )
+
     def notify(self, entry_id):
         self.publish_open_tasks()
         for listener in list(self.listeners):
