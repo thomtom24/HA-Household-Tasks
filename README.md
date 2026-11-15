@@ -2,7 +2,7 @@
 
 Experimental Home Assistant custom integration for rule-driven household task tracking.
 
-**Development status: v0.4.0 candidate (testing). Do not rely on it for critical safety or MOT reminders until tested.**
+**Development status: v0.5.1 candidate (testing). Do not rely on it for critical safety or MOT reminders until tested.**
 
 ## Features
 - One task per Home Assistant integration configuration entry; edit through integration options.
@@ -12,6 +12,7 @@ Experimental Home Assistant custom integration for rule-driven household task tr
 - Home Assistant area selector, including no area (N/A).
 - Persistent history in Home Assistant storage.
 - `sensor.household_tasks_open_names`: count as state, `tasks` and `names` as lists, and optional `announcement` text.
+- `sensor.household_tasks_latest_open`: friendly name of the most recently opened task that is still outstanding; attributes include `task_name`, `opened_at`, and `open_count`. When no tasks are open, the state is `none`. Updates when tasks open, close, or are reopened, and is reconstructed from persisted opening timestamps on restart. A change can also mean the newest task closed, so do not treat every state change as a new-task event.
 - Dashboard card bundled in `custom_components/household_tasks/frontend/household-tasks-card.js` and served by the integration.
 
 ## Installation (development testing)
