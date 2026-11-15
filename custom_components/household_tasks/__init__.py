@@ -108,7 +108,7 @@ class Engine:
             latest_attributes = {
                 "friendly_name": "Household Tasks Latest Open",
                 "icon": "mdi:clipboard-text-clock-outline",
-                "task_name": None, "task_entity_id": None,
+                "task_name": None,
                 "opened_at": None, "open_count": 0,
             }
         else:
@@ -117,7 +117,6 @@ class Engine:
                 "friendly_name": "Household Tasks Latest Open",
                 "icon": "mdi:clipboard-text-clock-outline",
                 "task_name": latest_name,
-                "task_entity_id": None,
                 "opened_at": self.state(latest).get("last_opened"),
                 "open_count": len(open_entries),
             }
