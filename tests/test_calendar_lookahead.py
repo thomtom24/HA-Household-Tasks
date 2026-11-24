@@ -118,6 +118,9 @@ def test_failed_expansion_cannot_use_narrow_cache():
         result = await engine.calculate_calendar(long, NOW)
         assert result == (None, None, False, None)
         assert engine.calendar_cache[CALENDAR][1] == [event(10)]
+        due, token, active, _ = await engine.calculate_calendar(short, NOW)
+        assert due == local_midnight(NOW) + timedelta(days=9)
+        assert token and not active
 
     asyncio.run(scenario())
 
