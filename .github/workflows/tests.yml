@@ -17,3 +17,4 @@ jobs:
       - run: python -m pip install -r requirements-test.txt
       - run: python -m compileall -q custom_components
       - run: python -m pytest tests -v --cov=custom_components.household_tasks --cov-report=term-missing
+      - run: node --test tests/frontend/*.test.cjs
