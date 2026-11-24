@@ -646,7 +646,7 @@ class Engine:
         """Resolve a validated selector to exactly one loaded task."""
         # Validate direct handler calls too, including internal integrations.
         try:
-            data = COMPLETION_SERVICE_SCHEMA(call.data)
+            data = COMPLETION_SERVICE_SCHEMA(dict(call.data))
         except vol.Invalid as err:
             raise ServiceValidationError(str(err)) from err
         if "entry_id" in data:
