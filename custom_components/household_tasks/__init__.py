@@ -364,7 +364,8 @@ class Engine:
                 # Calculated display fields do not warrant a history write.
                 # They are recomputed on setup and every evaluation.
                 transient = {"due", "next_token", "entity_warnings", "completed_early_today"}
-                if ({k: v for k, v in old.items() if k not in transient}
+                if ("due" not in old or
+                        {k: v for k, v in old.items() if k not in transient}
                         != {k: v for k, v in s.items() if k not in transient}):
                     await self.save()
                 self.notify(entry.entry_id)
