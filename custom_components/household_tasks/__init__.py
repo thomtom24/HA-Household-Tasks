@@ -8,15 +8,14 @@ from pathlib import Path
 from datetime import datetime, timedelta, time as datetime_time
 import voluptuous as vol
 from homeassistant.auth.permissions.const import POLICY_CONTROL
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, callback, valid_entity_id
 from homeassistant.exceptions import ServiceValidationError, Unauthorized, UnknownUser
 from homeassistant.helpers import discovery, entity_registry as er
 from homeassistant.components.http import StaticPathConfig
-from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.helpers.entity_registry import EVENT_ENTITY_REGISTRY_UPDATED
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.storage import Store
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 from homeassistant.setup import async_when_setup
 from homeassistant.util import dt as dt_util
 from .scheduling import fixed_schedule
@@ -102,7 +101,8 @@ class Engine:
         self.aggregate_listeners = []
         self.lock = asyncio.Lock()
         self.unsub_timer = None
-        self.unsub_states = None
+        self.entity_dependencies = {}
+        self.entity_subscriptions = {}
         self.unsub_registry = None
         self.calendar_cache = {}
         self.calendar_failures = {}
@@ -111,7 +111,6 @@ class Engine:
     async def start(self):
         self.history = await self.store.async_load() or {}
         self.unsub_timer = async_track_time_interval(self.hass, self._tick, timedelta(minutes=1))
-        self.unsub_states = self.hass.bus.async_listen(EVENT_STATE_CHANGED, self._state_event)
         self.unsub_registry = self.hass.bus.async_listen(EVENT_ENTITY_REGISTRY_UPDATED, self._registry_event)
         for name in ("complete", "complete_early"):
             self.hass.services.async_register(
@@ -781,18 +780,51 @@ class Engine:
                                 changed = True
                 options = {**entry.options, **changes}
                 self.hass.config_entries.async_update_entry(entry, options=options)
+                self.refresh_entity_subscriptions()
                 if changed:
                     await self.save()
+
+    def active_dependencies(self, entry):
+        """Return only entity IDs used by the currently selected task rules."""
+        config = self.conf(entry)
+        dependencies = []
+        if config["trigger_type"] in ("calendar", "date_entity", "numeric", "state"):
+            dependencies.append(config.get("trigger_entity"))
+        if config["close_type"] in ("entity_state", "entity_numeric",
+                                    "manual_or_entity_state", "manual_or_entity_numeric"):
+            dependencies.append(config.get("close_entity"))
+        return {entity_id for entity_id in dependencies
+                if isinstance(entity_id, str) and valid_entity_id(entity_id)}
+
+    @callback
+    def refresh_entity_subscriptions(self):
+        """Maintain one indexed HA listener per actively referenced entity."""
+        dependencies = {}
+        for entry in self.entries.values():
+            for entity_id in self.active_dependencies(entry):
+                dependencies.setdefault(entity_id, set()).add(entry.entry_id)
+        self.entity_dependencies = dependencies
+        for entity_id in self.entity_subscriptions.keys() - dependencies.keys():
+            self.entity_subscriptions.pop(entity_id)()
+        for entity_id in dependencies.keys() - self.entity_subscriptions.keys():
+            self.entity_subscriptions[entity_id] = async_track_state_change_event(
+                self.hass, entity_id, self._state_event)
 
     @callback
     def _state_event(self, event):
         entity_id = event.data.get("entity_id")
-        for entry in list(self.entries.values()):
-            c = self.conf(entry)
-            if entity_id in (c.get("trigger_entity"), c.get("close_entity")):
-                if c.get("trigger_type") == "calendar" and entity_id == c.get("trigger_entity"):
-                    self.calendar_cache.pop(entity_id, None)
-                self.hass.async_create_task(self._evaluate_background(entry))
+        entries = []
+        for entry_id in sorted(self.entity_dependencies.get(entity_id, ())):
+            entry = self.entries.get(entry_id)
+            # Ignore callbacks already queued before a rule change or unload.
+            if entry is not None and entity_id in self.active_dependencies(entry):
+                entries.append(entry)
+        if any(self.conf(entry)["trigger_type"] == "calendar"
+               and self.conf(entry).get("trigger_entity") == entity_id
+               for entry in entries):
+            self.calendar_cache.pop(entity_id, None)
+        for entry in entries:
+            self.hass.async_create_task(self._evaluate_background(entry))
 
 async def async_setup(hass: HomeAssistant, config):
     await hass.http.async_register_static_paths([
@@ -820,9 +852,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     engine = hass.data[DOMAIN]
     engine.entries[entry.entry_id] = entry
     engine.state(entry)
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    entry.async_on_unload(entry.add_update_listener(_options_updated))
-    await engine.evaluate(entry)
+    try:
+        engine.refresh_entity_subscriptions()
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        entry.async_on_unload(entry.add_update_listener(_options_updated))
+        await engine.evaluate(entry)
+    except (Exception, asyncio.CancelledError):
+        if engine.entries.get(entry.entry_id) is entry:
+            engine.entries.pop(entry.entry_id, None)
+            engine.refresh_entity_subscriptions()
+            engine.publish_open_tasks()
+        raise
     engine.publish_open_tasks()
     return True
 
@@ -834,6 +874,7 @@ async def async_unload_entry(hass, entry):
     if ok:
         hass.data[DOMAIN].entries.pop(entry.entry_id, None)
         hass.data[DOMAIN].evaluation_errors.discard(entry.entry_id)
+        hass.data[DOMAIN].refresh_entity_subscriptions()
         hass.data[DOMAIN].publish_open_tasks()
     return ok
 
