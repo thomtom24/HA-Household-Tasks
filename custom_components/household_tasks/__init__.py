@@ -2,6 +2,7 @@
 from __future__ import annotations
 import asyncio
 import logging
+import math
 from copy import deepcopy
 from pathlib import Path
 from datetime import datetime, timedelta, time as datetime_time
@@ -41,12 +42,27 @@ def local_midnight(value):
     return datetime.combine(day, datetime_time.min, dt_util.get_default_time_zone())
 
 
-def compare(value, op, threshold):
+def finite_number(value):
+    """Return a finite numeric reading, or None for invalid data."""
     try:
-        x, y = float(value), float(threshold)
-        return {"below": x < y, "below_or_equal": x <= y, "above": x > y, "above_or_equal": x >= y, "equal": x == y}.get(op, False)
-    except (ValueError, TypeError):
-        return False
+        number = float(value)
+    except (ValueError, TypeError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def numeric_condition(value, op, threshold):
+    """Return True/False for valid comparisons, None for invalid inputs."""
+    x, y = finite_number(value), finite_number(threshold)
+    if x is None or y is None:
+        return None
+    return {"below": x < y, "below_or_equal": x <= y, "above": x > y,
+            "above_or_equal": x >= y, "equal": x == y}.get(op)
+
+
+def compare(value, op, threshold):
+    """Keep the existing boolean comparison interface."""
+    return numeric_condition(value, op, threshold) is True
 
 class Engine:
     def __init__(self, hass):
@@ -247,10 +263,14 @@ class Engine:
         elif kind in ("numeric", "state"):
             entity = self.hass.states.get(c.get("trigger_entity", ""))
             value = entity.state if entity else None
-            active = (compare(value, c["operator"], c["threshold"]) if kind == "numeric"
-                      else value == c["trigger_state"] and value not in (None, "unknown", "unavailable", ""))
+            active = (numeric_condition(value, c["operator"], c["threshold"]) if kind == "numeric"
+                      else None if value in (None, "unknown", "unavailable", "")
+                      else value == c["trigger_state"])
             token = "entity:" + str(c.get("trigger_entity"))
-            if active:
+            if active is None:
+                # Invalid readings are not a new occurrence or an inactive edge.
+                due = parse_dt(s.get("due"))
+            elif active:
                 # Keep the current occurrence's due time stable while active,
                 # including after completion or while snoozed.
                 due = parse_dt(s.get("due_at_open")) or parse_dt(s.get("due")) or now
@@ -268,11 +288,7 @@ class Engine:
             if entity is None or entity.state in ("unknown", "unavailable", ""):
                 return False
             if c["trigger_type"] == "numeric":
-                try:
-                    float(entity.state)
-                except (ValueError, TypeError):
-                    return False
-                return not compare(entity.state, c["operator"], c["threshold"])
+                return numeric_condition(entity.state, c["operator"], c["threshold"]) is False
             return entity.state != c["trigger_state"]
         if "calendar_end" in rule:
             return calendar_end is not None and now >= calendar_end
@@ -299,8 +315,16 @@ class Engine:
             state = self.hass.states.get(entity_id) if entity_id else None
             if not entity_id or state is None:
                 warnings.append(f"{label}: entity missing ({entity_id or 'not configured'})")
-            elif state.state in ("unknown", "unavailable"):
-                warnings.append(f"{label}: {entity_id} is {state.state}")
+            elif state.state in ("unknown", "unavailable", ""):
+                warnings.append(f"{label}: {entity_id} is {state.state or 'empty'}")
+            elif ((key == "trigger_entity" and c["trigger_type"] == "numeric")
+                  or (key == "close_entity" and "entity_numeric" in c["close_type"])):
+                if finite_number(state.state) is None:
+                    warnings.append(f"{label}: {entity_id} has an invalid numeric reading")
+                threshold_key = "threshold" if key == "trigger_entity" else "close_threshold"
+                operator_key = "operator" if key == "trigger_entity" else "close_operator"
+                if numeric_condition(0, c.get(operator_key), c.get(threshold_key)) is None:
+                    warnings.append(f"{label}: invalid numeric condition configuration")
         return warnings
 
     @staticmethod
@@ -359,11 +383,9 @@ class Engine:
                     self.record(s, "opened", now)
                     if self.conf(entry)["trigger_type"] in ("numeric", "state"):
                         s["latched"] = True
-            if not active and self.conf(entry)["trigger_type"] in ("numeric", "state"):
-                source = self.hass.states.get(self.conf(entry).get("trigger_entity", ""))
-                if source is not None and source.state not in ("unknown", "unavailable"):
-                    s["latched"] = False
-                    s["completed_token"] = None
+            if active is False and self.conf(entry)["trigger_type"] in ("numeric", "state"):
+                s["latched"] = False
+                s["completed_token"] = None
             if old != s:
                 # Calculated display fields do not warrant a history write.
                 # They are recomputed on setup and every evaluation.
