@@ -15,6 +15,7 @@ NOW = datetime(2026, 1, 14, 12, tzinfo=timezone.utc)
 def make_engine(**config):
     engine = Engine.__new__(Engine)
     engine.history = {}
+    engine.calendar_failures = {}
     engine.lock = asyncio.Lock()
     engine.save = AsyncMock()
     engine.notify = Mock()
