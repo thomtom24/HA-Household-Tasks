@@ -121,13 +121,48 @@ class Engine:
 
     async def start(self):
         self.history = await self.store.async_load() or {}
-        self.unsub_timer = async_track_time_interval(self.hass, self._tick, timedelta(minutes=1))
-        self.unsub_registry = self.hass.bus.async_listen(EVENT_ENTITY_REGISTRY_UPDATED, self._registry_event)
         for name in ("complete", "complete_early"):
             self.hass.services.async_register(
                 DOMAIN, name, getattr(self, "_service_" + name),
                 schema=COMPLETION_SERVICE_SCHEMA,
             )
+
+    @callback
+    def refresh_runtime_listeners(self):
+        """Keep shared scheduler listeners only while tasks are loaded."""
+        if self.entries:
+            if self.unsub_timer is None:
+                self.unsub_timer = async_track_time_interval(
+                    self.hass, self._tick, timedelta(minutes=1))
+            if self.unsub_registry is None:
+                self.unsub_registry = self.hass.bus.async_listen(
+                    EVENT_ENTITY_REGISTRY_UPDATED, self._registry_event)
+        else:
+            for attr in ("unsub_timer", "unsub_registry"):
+                unsubscribe = getattr(self, attr)
+                if unsubscribe is not None:
+                    setattr(self, attr, None)
+                    unsubscribe()
+
+    async def detach_entry(self, entry):
+        """Stop routing work to an entry and drain existing writes before reload."""
+        entry_id = entry.entry_id
+        if self.entries.get(entry_id) is not entry:
+            return
+        self.entries.pop(entry_id)
+        self.evaluation_errors.discard(entry_id)
+        self.refresh_entity_subscriptions()
+        self.refresh_runtime_listeners()
+        self.publish_open_tasks()
+        job = self.evaluation_jobs.get(entry_id)
+        if job is not None and job.task is not None:
+            job.pending = False
+            # Do not cancel a worker which may be writing shared history.
+            await asyncio.gather(asyncio.shield(job.task), return_exceptions=True)
+        # Direct service calls and registry changes also use the shared lock.
+        # Let any earlier mutation finish before permitting a reload/removal.
+        async with self.lock:
+            pass
 
     def state(self, entry):
         return self.history.setdefault(entry.entry_id, {
@@ -828,17 +863,19 @@ class Engine:
 
     async def _apply_entity_rename(self, old_id, new_id):
         for entry in list(self.entries.values()):
-            c = self.conf(entry)
-            changes = {}
-            if c.get("trigger_entity") == old_id:
-                changes["trigger_entity"] = new_id
-            if c.get("close_entity") == old_id:
-                changes["close_entity"] = new_id
-            if not changes:
-                continue
             # A registry rename is the same source, not a new opening rule.
-            # Update the persisted identity alongside the config entry.
+            # Recheck membership and references after acquiring the lock.
             async with self.lock:
+                if self.entries.get(entry.entry_id) is not entry:
+                    continue
+                c = self.conf(entry)
+                changes = {}
+                if c.get("trigger_entity") == old_id:
+                    changes["trigger_entity"] = new_id
+                if c.get("close_entity") == old_id:
+                    changes["close_entity"] = new_id
+                if not changes:
+                    continue
                 state = self.state(entry)
                 old_signature = self.opening_signature(entry)
                 changed = False
@@ -926,16 +963,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     engine = hass.data[DOMAIN]
     engine.entries[entry.entry_id] = entry
     engine.state(entry)
+    forwarding_started = False
     try:
         engine.refresh_entity_subscriptions()
+        engine.refresh_runtime_listeners()
+        forwarding_started = True
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-        entry.async_on_unload(entry.add_update_listener(_options_updated))
         await engine.evaluate(entry)
+        entry.async_on_unload(entry.add_update_listener(_options_updated))
     except (Exception, asyncio.CancelledError):
-        if engine.entries.get(entry.entry_id) is entry:
-            engine.entries.pop(entry.entry_id, None)
-            engine.refresh_entity_subscriptions()
-            engine.publish_open_tasks()
+        await engine.detach_entry(entry)
+        if forwarding_started:
+            # A partially forwarded platform may already have added entities.
+            # Best effort cleanup must not hide the original setup failure.
+            try:
+                if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+                    _LOGGER.error("Unable to unload all platforms after task setup failure")
+            except Exception:
+                _LOGGER.error("Unable to clean up platforms after task setup failure")
+                _LOGGER.debug("Task platform cleanup traceback", exc_info=True)
         raise
     engine.publish_open_tasks()
     return True
@@ -946,14 +992,14 @@ async def _options_updated(hass, entry):
 async def async_unload_entry(hass, entry):
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
-        hass.data[DOMAIN].entries.pop(entry.entry_id, None)
-        hass.data[DOMAIN].evaluation_errors.discard(entry.entry_id)
-        hass.data[DOMAIN].refresh_entity_subscriptions()
-        hass.data[DOMAIN].publish_open_tasks()
+        await hass.data[DOMAIN].detach_entry(entry)
     return ok
 
 async def async_remove_entry(hass, entry):
     engine = hass.data.get(DOMAIN)
     if engine:
-        engine.history.pop(entry.entry_id, None)
-        await engine.save()
+        await engine.detach_entry(entry)
+        async with engine.lock:
+            if entry.entry_id not in engine.entries:
+                engine.history.pop(entry.entry_id, None)
+                await engine.save()

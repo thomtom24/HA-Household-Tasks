@@ -18,6 +18,9 @@ def make_engine():
     engine.entity_subscriptions = {}
     engine.calendar_cache = {}
     engine.evaluation_errors = set()
+    engine.evaluation_jobs = {}
+    engine.lock = asyncio.Lock()
+    engine.refresh_runtime_listeners = Mock()
     engine.publish_open_tasks = Mock()
     engine.evaluate = AsyncMock()
     engine._evaluate_background = AsyncMock()
