@@ -94,7 +94,7 @@ def compare(value, op, threshold):
 class Engine:
     def __init__(self, hass):
         self.hass = hass
-        self.store = Store(hass, 1, "household_tasks.history")
+        self.store = Store(hass, 1, "household_tasks.history", private=True)
         self.history = {}
         self.entries = {}
         self.listeners = []
@@ -282,7 +282,10 @@ class Engine:
             for key in ("summary", "message"):
                 if event.get(key) is not None and not isinstance(event[key], str):
                     raise ValueError("Invalid calendar event title")
-        return events
+        # Keep only fields used for matching and scheduling. Do not retain
+        # descriptions, locations, attendees or provider-specific metadata.
+        return [{key: event[key] for key in ("start", "end", "summary", "message")
+                 if key in event} for event in events]
 
     async def calendar_events(self, entity_id, now, offset_days=0):
         """Return fresh events, or recent cached events for display during failure."""
@@ -713,7 +716,8 @@ class Engine:
                 return
             if entry_id not in self.evaluation_errors:
                 self.evaluation_errors.add(entry_id)
-                _LOGGER.exception("Unable to evaluate household task %s; will retry", entry_id)
+                _LOGGER.error("Unable to evaluate household task %s; will retry", entry_id)
+                _LOGGER.debug("Household task evaluation traceback", exc_info=True)
                 self._notify_evaluation_warning(entry_id)
         else:
             if entry_id in self.evaluation_errors:
@@ -726,7 +730,8 @@ class Engine:
             try:
                 listener(entry_id)
             except Exception:
-                _LOGGER.exception("Unable to publish evaluation warning for task %s", entry_id)
+                _LOGGER.error("Unable to publish evaluation warning for task %s", entry_id)
+                _LOGGER.debug("Household task warning publication traceback", exc_info=True)
 
     async def _tick(self, now):
         for entry in list(self.entries.values()):
