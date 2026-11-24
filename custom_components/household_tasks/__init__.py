@@ -6,7 +6,10 @@ import math
 from copy import deepcopy
 from pathlib import Path
 from datetime import datetime, timedelta, time as datetime_time
+from homeassistant.auth.permissions.const import POLICY_CONTROL
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import Unauthorized, UnknownUser
+from homeassistant.helpers import entity_registry as er
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.helpers.entity_registry import EVENT_ENTITY_REGISTRY_UPDATED
@@ -622,11 +625,40 @@ class Engine:
                 return entry.entry_id
         raise ValueError("Specify a valid entry_id or task name")
 
+    async def _authorize_service(self, entry_id, context):
+        """Require control of the target task's actual completion button."""
+        # HA-generated automation/internal contexts have no user ID.
+        if context.user_id is None:
+            return
+        user = await self.hass.auth.async_get_user(context.user_id)
+        if user is None:
+            raise UnknownUser(context=context)
+        if not user.is_active:
+            raise Unauthorized(context=context)
+        if user.is_admin:
+            return
+        # Resolve by stable registry identity, not a guessed entity name
+        # or an entity ID supplied by the service caller.
+        registry = er.async_get(self.hass)
+        entity_id = registry.async_get_entity_id(
+            "button", DOMAIN, f"{entry_id}_complete")
+        entity = registry.async_get(entity_id) if entity_id else None
+        if (entity is None or entity.disabled_by is not None
+                or entity.config_entry_id != entry_id
+                or not user.permissions.check_entity(entity_id, POLICY_CONTROL)):
+            raise Unauthorized(context=context, entity_id=entity_id,
+                               config_entry_id=entry_id, permission=POLICY_CONTROL)
+
+    async def _complete_service(self, call, action):
+        entry_id = self.find_entry(call)
+        await self._authorize_service(entry_id, call.context)
+        await self.act(entry_id, action)
+
     async def _service_complete(self, call):
-        await self.act(self.find_entry(call), "complete")
+        await self._complete_service(call, "complete")
 
     async def _service_complete_early(self, call):
-        await self.act(self.find_entry(call), "complete_early")
+        await self._complete_service(call, "complete_early")
 
     async def _evaluate_background(self, entry):
         """Isolate background evaluation failures and retry on future ticks."""
