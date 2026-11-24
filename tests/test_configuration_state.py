@@ -241,3 +241,47 @@ def test_failed_calculation_restores_previous_signature():
             assert state == before
 
     asyncio.run(scenario())
+
+
+def test_legacy_calendar_offset_and_case_only_match_are_equivalent():
+    engine, entry, _ = make_engine(trigger_type="calendar",
+        trigger_entity="calendar.test", calendar_offset_hours=48,
+        calendar_match="Collection")
+    original = engine.opening_signature(entry)
+    entry.options = {"calendar_offset_days": 2, "calendar_match": " collection "}
+    assert engine.opening_signature(entry) == original
+
+
+def test_closing_rule_edit_is_applied_without_resetting_opening_rule():
+    async def scenario():
+        engine, entry, _ = make_engine()
+        with patch("custom_components.household_tasks.dt_util.now", return_value=NOW):
+            await engine.evaluate(entry)
+            state = engine.state(entry)
+            signature = deepcopy(state["opening_signature"])
+            entry.options = {"close_type": "entity_numeric", "close_entity": "sensor.one",
+                             "close_operator": "above", "close_threshold": 1}
+            await engine.evaluate(entry)
+            assert not state["open"]
+            assert state["opening_signature"] == signature
+            assert state["events"][-1]["action"] == "auto_completed"
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("kind,field,old_value,submitted,expected", [
+    ("completion", "first_due_date", "2026-02-01", {"interval_days": 7}, None),
+    ("calendar", "calendar_match", "Collection",
+     {"trigger_entity": "calendar.test", "calendar_offset_days": 1}, ""),
+])
+def test_cleared_optional_settings_override_original_values(kind, field, old_value, submitted, expected):
+    from custom_components.household_tasks.config_flow import TaskSteps
+
+    async def scenario():
+        flow = TaskSteps()
+        flow.initialize({"trigger_type": kind, field: old_value}, True)
+        flow.async_step_close_choice = AsyncMock()
+        await flow.async_step_trigger_settings(submitted)
+        assert flow.values[field] == expected
+
+    asyncio.run(scenario())
