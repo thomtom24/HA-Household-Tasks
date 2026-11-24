@@ -184,6 +184,9 @@ class Engine:
         entity_id = c.get("trigger_entity", "")
         events = await self.calendar_events(entity_id, now)
         if events is None:
+            if s.get("open"):
+                return (parse_dt(s.get("due_at_open")) or parse_dt(s.get("due")),
+                        s.get("active_token"), False, parse_dt(s.get("calendar_end")))
             return None, None, False, None
         match = str(c.get("calendar_match", "")).casefold().strip()
         offset = timedelta(days=legacy_calendar_days({**entry.data, **entry.options}))
@@ -203,12 +206,13 @@ class Engine:
         # calendar starts advertising a later collection.
         if s.get("open"):
             current = next((item for item in candidates if item[1] == s.get("active_token")), None)
+            original_due = parse_dt(s.get("due_at_open")) or parse_dt(s.get("due"))
             if current:
                 due, token, _, end = current
-                return due, token, now >= due and (end is None or now < end), end
-            end = parse_dt(s.get("calendar_end"))
-            if end:
-                return parse_dt(s.get("due_at_open")), s.get("active_token"), False, end
+                return original_due or due, token, now >= due and (end is None or now < end), end
+            # An outstanding occurrence must not be replaced by a newer event,
+            # even if its original event is absent or has no recorded end.
+            return original_due, s.get("active_token"), False, parse_dt(s.get("calendar_end"))
         # Do not reopen a completed occurrence. Select the next matching event.
         for due, token, start, end in candidates:
             if token == s.get("completed_token") or (end is not None and end <= now):
@@ -350,10 +354,8 @@ class Engine:
             s["completed_early_today"] = self.completed_early_today(s, now)
             s["entity_warnings"] = self.entity_warnings(entry)
             s["due"] = due.isoformat() if due else None
-            if end is not None:
+            if self.conf(entry)["trigger_type"] == "calendar" and s.get("open") and end is not None:
                 s["calendar_end"] = end.isoformat()
-            if self.conf(entry)["trigger_type"] == "calendar" and end is None and s.get("open"):
-                end = parse_dt(s.get("calendar_end"))
             s["next_token"] = token
             if s.get("snooze_until") and (parse_dt(s["snooze_until"]) or now) <= now:
                 s["snooze_until"] = None
@@ -365,12 +367,6 @@ class Engine:
                 self._finish(s, now, "auto_completed")
                 if s.get("active_token"):
                     s["completed_token"] = s["active_token"]
-            if self.conf(entry)["trigger_type"] == "calendar" and end and now >= end:
-                if s.get("open"):
-                    self._finish(s, now, "expired")
-                if s.get("active_token"):
-                    s["completed_token"] = s["active_token"]
-                s["calendar_end"] = None
             if not s.get("open") and active and not snoozed and token != s.get("completed_token"):
                 if self.conf(entry)["trigger_type"] not in ("numeric", "state") or not s.get("latched"):
                     s["open"] = True
@@ -380,9 +376,15 @@ class Engine:
                         s["due"] = now.isoformat()
                     s["due_at_open"] = due.isoformat() if due else None
                     s["active_token"] = token
+                    if self.conf(entry)["trigger_type"] == "calendar":
+                        # Only persist an end time belonging to this occurrence.
+                        s["calendar_end"] = end.isoformat() if end else None
                     self.record(s, "opened", now)
                     if self.conf(entry)["trigger_type"] in ("numeric", "state"):
                         s["latched"] = True
+            if self.conf(entry)["trigger_type"] == "calendar" and not s.get("open") and not snoozed:
+                if s.get("calendar_end") is not None:
+                    s["calendar_end"] = None
             if active is False and self.conf(entry)["trigger_type"] in ("numeric", "state"):
                 s["latched"] = False
                 s["completed_token"] = None
