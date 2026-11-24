@@ -76,6 +76,7 @@ class Engine:
         self.unsub_states = None
         self.unsub_registry = None
         self.calendar_cache = {}
+        self.calendar_failures = {}
         self.evaluation_errors = set()
 
     async def start(self):
@@ -220,8 +221,40 @@ class Engine:
         horizon = max(90, offset_days + 30)
         return local_midnight(now) + timedelta(days=horizon + 1)
 
+    def _calendar_failed(self, entity_id, now, reason):
+        """Back off per calendar, sharing failures across dependent tasks."""
+        previous = self.calendar_failures.get(entity_id)
+        count = min(previous[2] + 1, 5) if previous else 1
+        retry = now + timedelta(minutes=min(2 ** (count - 1), 15))
+        self.calendar_failures[entity_id] = (now, retry, count, reason)
+        if previous is None:
+            _LOGGER.warning("Calendar data unavailable for %s; will retry", entity_id)
+
+    @staticmethod
+    def _validated_calendar_events(response, entity_id):
+        """Reject incomplete or malformed responses, not as empty calendars."""
+        if not isinstance(response, dict):
+            raise ValueError("Invalid calendar response")
+        payload = response.get(entity_id)
+        if not isinstance(payload, dict) or not isinstance(payload.get("events"), list):
+            raise ValueError("Missing calendar events")
+        events = payload["events"]
+        for event in events:
+            if not isinstance(event, dict):
+                raise ValueError("Invalid calendar event")
+            start = parse_dt(event.get("start"))
+            end = parse_dt(event.get("end"))
+            if (start is None or
+                    (event.get("end") is not None and end is None) or
+                    (end is not None and end < start)):
+                raise ValueError("Invalid calendar event dates")
+            for key in ("summary", "message"):
+                if event.get(key) is not None and not isinstance(event[key], str):
+                    raise ValueError("Invalid calendar event title")
+        return events
+
     async def calendar_events(self, entity_id, now, offset_days=0):
-        """Share a sufficiently wide calendar response across loaded tasks."""
+        """Return fresh events, or recent cached events for display during failure."""
         max_offset = offset_days
         for other in self.entries.values():
             config = self.conf(other)
@@ -230,36 +263,51 @@ class Engine:
             try:
                 other_offset = legacy_calendar_days({**other.data, **other.options})
             except (ValueError, TypeError, OverflowError):
-                # A malformed sibling task must not block valid calendar tasks.
                 continue
             if 0 <= other_offset <= 365:
                 max_offset = max(max_offset, other_offset)
         end = self.calendar_window_end(now, max_offset)
+        task_end = self.calendar_window_end(now, offset_days)
         cached = self.calendar_cache.get(entity_id)
-        covers_window = (cached is not None and cached[0] <= now
-                         and cached[2] >= end)
-        if covers_window and now - cached[0] < timedelta(minutes=5):
+        age = dt_util.as_utc(now) - dt_util.as_utc(cached[0]) if cached else None
+        if age is not None and (age < timedelta(0) or age >= timedelta(minutes=30)):
+            self.calendar_cache.pop(entity_id, None)
+            cached = None
+
+        def fallback():
+            return cached[1] if cached is not None and cached[2] >= task_end else None
+
+        failure = self.calendar_failures.get(entity_id)
+        if failure and failure[0] <= now < failure[1]:
+            return fallback()
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in ("unknown", "unavailable", ""):
+            self._calendar_failed(entity_id, now, "calendar entity unavailable")
+            return fallback()
+        if not failure and cached is not None and age < timedelta(minutes=5) and cached[2] >= end:
             return cached[1]
         if not self.hass.services.has_service("calendar", "get_events"):
-            return None
+            self._calendar_failed(entity_id, now, "calendar service unavailable")
+            return fallback()
         try:
-            response = await self.hass.services.async_call(
-                "calendar", "get_events",
-                {"entity_id": entity_id,
-                 "start_date_time": (now - timedelta(days=3)).isoformat(),
-                 "end_date_time": end.isoformat()},
-                blocking=True, return_response=True,
-            )
-            events = response.get(entity_id, {}).get("events", [])
-            self.calendar_cache[entity_id] = (now, events, end)
-            return events
+            async with asyncio.timeout(15):
+                response = await self.hass.services.async_call(
+                    "calendar", "get_events",
+                    {"entity_id": entity_id,
+                     "start_date_time": (now - timedelta(days=3)).isoformat(),
+                     "end_date_time": end.isoformat()},
+                    blocking=True, return_response=True,
+                )
+            events = self._validated_calendar_events(response, entity_id)
+        except ValueError:
+            self._calendar_failed(entity_id, now, "invalid calendar response")
+            return fallback()
         except Exception:
-            # Do not represent a narrower response as covering a longer offset.
-            # Stale-data trust and expiry are addressed separately.
-            task_end = self.calendar_window_end(now, offset_days)
-            covers_task = (cached is not None and cached[0] <= now
-                           and cached[2] >= task_end)
-            return cached[1] if covers_task else None
+            self._calendar_failed(entity_id, now, "calendar request failed")
+            return fallback()
+        self.calendar_cache[entity_id] = (now, events, end)
+        self.calendar_failures.pop(entity_id, None)
+        return events
 
     async def calculate_calendar(self, entry, now):
         c, s = self.conf(entry), self.state(entry)
@@ -269,10 +317,13 @@ class Engine:
             raise ValueError("Calendar reminder offset must be between 0 and 365 days")
         window_end = self.calendar_window_end(now, offset_days)
         events = await self.calendar_events(entity_id, now, offset_days)
+        untrusted = events is None or entity_id in self.calendar_failures
+        if untrusted and s.get("open"):
+            # Retain the outstanding occurrence, but do not use its stored end
+            # to complete it while the calendar cannot be verified.
+            return (parse_dt(s.get("due_at_open")) or parse_dt(s.get("due")),
+                    s.get("active_token"), False, None)
         if events is None:
-            if s.get("open") and not s.get("pending_rebind"):
-                return (parse_dt(s.get("due_at_open")) or parse_dt(s.get("due")),
-                        s.get("active_token"), False, parse_dt(s.get("calendar_end")))
             return None, None, False, None
         match = str(c.get("calendar_match", "")).casefold().strip()
         offset = timedelta(days=offset_days)
@@ -303,7 +354,7 @@ class Engine:
         for due, token, start, end in candidates:
             if start >= window_end or token == s.get("completed_token") or (end is not None and end <= now):
                 continue
-            return due, token, now >= due, end
+            return due, token, now >= due and not untrusted, None if untrusted else end
         return None, None, False, None
 
     def calculate(self, entry, now):
@@ -419,6 +470,10 @@ class Engine:
                 operator_key = "operator" if key == "trigger_entity" else "close_operator"
                 if numeric_condition(0, c.get(operator_key), c.get(threshold_key)) is None:
                     warnings.append(f"{label}: invalid numeric condition configuration")
+        if c["trigger_type"] == "calendar":
+            failure = self.calendar_failures.get(c.get("trigger_entity"))
+            if failure:
+                warnings.append(f"Calendar data: {failure[3]}; automatic calendar transitions paused")
         return warnings
 
     @staticmethod
@@ -677,7 +732,7 @@ class Engine:
         for entry in list(self.entries.values()):
             c = self.conf(entry)
             if entity_id in (c.get("trigger_entity"), c.get("close_entity")):
-                if c.get("trigger_type") == "calendar":
+                if c.get("trigger_type") == "calendar" and entity_id == c.get("trigger_entity"):
                     self.calendar_cache.pop(entity_id, None)
                 self.hass.async_create_task(self._evaluate_background(entry))
 
