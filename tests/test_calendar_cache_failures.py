@@ -23,6 +23,12 @@ def response(*events):
 
 def make_engine(rule="manual", offset=0):
     engine = Engine.__new__(Engine)
+    engine.storage_dirty = False
+    engine.storage_failed = False
+    engine.storage_retry = None
+    engine.reloading_entries = {}
+    engine.last_aggregate_names = {}
+    engine.calendar_requests = {}
     engine.cyclic_entries = set()
     engine.history = {}
     engine.lock = asyncio.Lock()

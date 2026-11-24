@@ -16,6 +16,12 @@ from custom_components.household_tasks import Engine
 def test_active_trigger_does_not_rewrite_history(kind, reading, inactive):
     async def scenario():
         engine = Engine.__new__(Engine)
+        engine.storage_dirty = False
+        engine.storage_failed = False
+        engine.storage_retry = None
+        engine.reloading_entries = {}
+        engine.last_aggregate_names = {}
+        engine.calendar_requests = {}
         engine.cyclic_entries = set()
         engine.history = {}
         engine.lock = asyncio.Lock()
@@ -70,6 +76,12 @@ def test_active_trigger_does_not_rewrite_history(kind, reading, inactive):
 def test_new_inactive_task_persists_creation_baseline():
     async def scenario():
         engine = Engine.__new__(Engine)
+        engine.storage_dirty = False
+        engine.storage_failed = False
+        engine.storage_retry = None
+        engine.reloading_entries = {}
+        engine.last_aggregate_names = {}
+        engine.calendar_requests = {}
         engine.cyclic_entries = set()
         engine.history = {}
         engine.lock = asyncio.Lock()

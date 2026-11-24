@@ -10,6 +10,12 @@ from custom_components.household_tasks.sensor import AggregateTaskSensor, TaskSt
 
 def engine_with_tasks(*tasks):
     engine = Engine.__new__(Engine)
+    engine.storage_dirty = False
+    engine.storage_failed = False
+    engine.storage_retry = None
+    engine.reloading_entries = {}
+    engine.last_aggregate_names = {}
+    engine.calendar_requests = {}
     engine.cyclic_entries = set()
     engine.entries = {}
     engine.history = {}

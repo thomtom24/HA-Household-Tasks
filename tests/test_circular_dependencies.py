@@ -105,6 +105,12 @@ def test_wizard_allows_edit_that_breaks_existing_cycle():
 
 def engine_fixture():
     engine = Engine.__new__(Engine)
+    engine.storage_dirty = False
+    engine.storage_failed = False
+    engine.storage_retry = None
+    engine.reloading_entries = {}
+    engine.last_aggregate_names = {}
+    engine.calendar_requests = {}
     engine.hass = SimpleNamespace()
     engine.entries = {"a": entry("a", rule("sensor.a"))}
     engine.history = {"a": {"open": True, "events": [{"action": "opened", "at": "2026-11-24T12:00:00+00:00"}]}}
