@@ -134,6 +134,18 @@ A change to the latest-open sensor does not necessarily mean a new task opened: 
 
 The integration registers backend actions for completion and early completion. The unfinished skip, snooze and reopen actions have been removed. Previously snoozed outstanding tasks are restored on evaluation after upgrade; existing historical records are retained.
 
+### Completion action inputs
+
+Both `household_tasks.complete` and `household_tasks.complete_early` accept exactly one non-blank text field: `entry_id` (the exact config entry ID, available as `task_entry_id` on the status sensor) or `task` (the exact internal task name or config entry title). The built-in dashboard uses `entry_id`. For example:
+
+```yaml
+action: household_tasks.complete
+data:
+  task: change_bedding
+```
+
+Names are case-sensitive. If a name matches multiple tasks, use the exact `entry_id` instead. Unknown identifiers, both selectors together, non-text or blank values and unexpected fields are rejected. Update any automation that previously relied on ignored extra fields or fallback between selectors.
+
 ### Completion action permissions
 
 The custom `household_tasks.complete` and `household_tasks.complete_early` actions respect Home Assistant user permissions. Active administrators can complete eligible tasks; other authenticated users must have control permission on the selected task's registered completion button. A missing or disabled completion button prevents non-administrators from using the custom actions. Renaming a button does not change the identity used for permission checks.
