@@ -7,7 +7,7 @@ import pytest
 
 from homeassistant.auth.permissions.const import POLICY_CONTROL
 from homeassistant.core import Context
-from homeassistant.exceptions import Unauthorized, UnknownUser
+from homeassistant.exceptions import ServiceValidationError, Unauthorized, UnknownUser
 
 from custom_components.household_tasks import Engine
 from custom_components.household_tasks.const import DOMAIN
@@ -127,8 +127,13 @@ def test_service_data_cannot_override_authenticated_user_or_target_button(action
         request = call({"entry_id": ENTRY_ID, "user_id": None,
                         "entity_id": "button.allowed_other", "task": "other_task"})
         with patch("custom_components.household_tasks.er.async_get", return_value=registry):
-            with pytest.raises(Unauthorized):
+            with pytest.raises(ServiceValidationError):
                 await invoke(engine, action, request)
+            engine.hass.auth.async_get_user.assert_not_awaited()
+            engine.act.assert_not_awaited()
+            # A well-formed request still cannot use another button's permission.
+            with pytest.raises(Unauthorized):
+                await invoke(engine, action, call())
         engine.hass.auth.async_get_user.assert_awaited_once_with(USER_ID)
         user.permissions.check_entity.assert_called_once_with(BUTTON, POLICY_CONTROL)
         engine.act.assert_not_awaited()
