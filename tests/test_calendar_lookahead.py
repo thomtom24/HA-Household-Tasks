@@ -31,6 +31,7 @@ def make_engine(*entries, events=()):
     engine.history = {}
     engine.entries = {entry.entry_id: entry for entry in entries}
     engine.calendar_cache = {}
+    engine.calendar_failures = {}
 
     async def get_events(domain, service, data, **kwargs):
         end = datetime.fromisoformat(data["end_date_time"])
@@ -38,7 +39,8 @@ def make_engine(*entries, events=()):
             item for item in events
             if datetime.fromisoformat(item["start"]) < end]}}
 
-    engine.hass = SimpleNamespace(services=SimpleNamespace(
+    engine.hass = SimpleNamespace(states=SimpleNamespace(get=lambda _: SimpleNamespace(state="off")),
+        services=SimpleNamespace(
         has_service=Mock(return_value=True),
         async_call=AsyncMock(side_effect=get_events)))
     return engine
