@@ -59,7 +59,8 @@
           "friendly_name": "Friendly name",
           "category": "Category",
           "area_id": "Area (optional)"
-        }
+        },
+        "description": "Create a household task and configure when it opens and closes."
       }
     },
     "error": {
