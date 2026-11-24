@@ -87,7 +87,7 @@ def labelled_options(labels):
 
 def field(key, value, required=True):
     return vol.Required(key, default=value) if required else (
-        vol.Optional(key, default=value) if value not in (None, "", []) else vol.Optional(key)
+        vol.Optional(key, description={"suggested_value": value}) if value not in (None, "", []) else vol.Optional(key)
     )
 
 def details_schema(d, editing=False):
@@ -191,6 +191,7 @@ class TaskSteps:
             if errors:
                 return self.async_show_form(step_id="details", data_schema=schema, errors=errors)
             self.values.update(data)
+            self.values["area_id"] = data.get("area_id")
             return await self.async_step_trigger_choice()
         return self.async_show_form(step_id="details", data_schema=schema)
 
@@ -227,9 +228,9 @@ class TaskSteps:
             # An omitted optional field in the submitted trigger form means
             # it has been cleared. Explicit values override original entry data.
             if self.values.get("trigger_type") == "completion":
-                self.values["first_due_date"] = user_input.get("first_due_date") or None
+                self.values["first_due_date"] = data.get("first_due_date") or None
             if self.values.get("trigger_type") == "calendar":
-                self.values["calendar_match"] = user_input.get("calendar_match") or ""
+                self.values["calendar_match"] = data.get("calendar_match") or ""
                 self.values.pop("calendar_offset_hours", None)
             if self.values.get("trigger_type") in ("weekly", "monthly", "yearly"):
                 self.values["hour"] = 0
