@@ -127,18 +127,19 @@ class TaskSteps:
 
     async def async_step_trigger_choice(self, user_input=None):
         if user_input is not None:
-            old_type = self.values.get("trigger_type")
             self.values.update(user_input)
-            if old_type != self.values["trigger_type"]:
-                # Avoid keeping stale completion tokens after changing trigger families.
-                self.values["_reset_trigger_state"] = True
             return await self.async_step_trigger_settings()
         return self.async_show_form(step_id="trigger_choice", data_schema=trigger_choice_schema(self.values))
 
     async def async_step_trigger_settings(self, user_input=None):
         if user_input is not None:
             self.values.update(user_input)
+            # An omitted optional field in the submitted trigger form means
+            # it has been cleared. Explicit values override original entry data.
+            if self.values.get("trigger_type") == "completion":
+                self.values["first_due_date"] = user_input.get("first_due_date") or None
             if self.values.get("trigger_type") == "calendar":
+                self.values["calendar_match"] = user_input.get("calendar_match") or ""
                 self.values.pop("calendar_offset_hours", None)
             if self.values.get("trigger_type") in ("weekly", "monthly", "yearly"):
                 self.values["hour"] = 0

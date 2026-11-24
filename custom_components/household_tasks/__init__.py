@@ -98,6 +98,61 @@ class Engine:
     def conf(self, entry):
         return {**DEFAULTS, **entry.data, **entry.options}
 
+    def opening_signature(self, entry):
+        """Persist only settings that actually affect the opening rule."""
+        c = self.conf(entry)
+        kind = c["trigger_type"]
+        signature = {"kind": kind}
+        integer_fields = {
+            "completion": ("interval_days",), "weekly": ("weekday",),
+            "monthly": ("month_day", "schedule_interval"),
+            "yearly": ("year_month", "month_day", "schedule_interval"),
+            "date_entity": ("offset_days",),
+        }
+        for key in integer_fields.get(kind, ()):
+            signature[key] = int(c.get(key, DEFAULTS[key]))
+        if kind in ("numeric", "state", "calendar", "date_entity"):
+            signature["trigger_entity"] = c.get("trigger_entity")
+        if kind == "completion":
+            date = c.get("first_due_date")
+            signature["first_due_date"] = str(date) if date else None
+        elif kind == "numeric":
+            threshold = c.get("threshold", DEFAULTS["threshold"])
+            # Non-finite floats must never be persisted in the signature.
+            signature["threshold"] = finite_number(threshold)
+            signature["operator"] = c.get("operator", DEFAULTS["operator"])
+        elif kind == "state":
+            signature["trigger_state"] = c.get("trigger_state", DEFAULTS["trigger_state"])
+        elif kind == "calendar":
+            raw = {**getattr(entry, "data", {}), **getattr(entry, "options", {})}
+            signature["calendar_offset_days"] = legacy_calendar_days(raw)
+            signature["calendar_match"] = str(c.get("calendar_match", "")).casefold().strip()
+        return signature
+
+    def reconcile_opening_rule(self, entry, state, now):
+        """Reset obsolete occurrence state without erasing task history."""
+        signature = self.opening_signature(entry)
+        previous = state.get("opening_signature")
+        if previous == signature:
+            return False
+        state["opening_signature"] = signature
+        # Upgrades from older versions establish a baseline, never reset history.
+        if previous is None:
+            return False
+        for key in ("active_token", "completed_token", "next_token", "calendar_end",
+                    "latched", "schedule_anchor", "pending_rebind", "carried_open"):
+            state.pop(key, None)
+        if state.get("open"):
+            state["pending_rebind"] = True
+            state["carried_open"] = True
+        else:
+            state.pop("due_at_open", None)
+            state.pop("due", None)
+        if signature["kind"] in ("weekly", "monthly", "yearly"):
+            # Start changed fixed schedules on the edit date, not a past slot.
+            state["schedule_anchor"] = local_midnight(now).isoformat()
+        return True
+
     def publish_open_tasks(self):
         names = sorted((self.conf(e).get("friendly_name") or e.title
                         for e in self.entries.values()
@@ -184,7 +239,7 @@ class Engine:
         entity_id = c.get("trigger_entity", "")
         events = await self.calendar_events(entity_id, now)
         if events is None:
-            if s.get("open"):
+            if s.get("open") and not s.get("pending_rebind"):
                 return (parse_dt(s.get("due_at_open")) or parse_dt(s.get("due")),
                         s.get("active_token"), False, parse_dt(s.get("calendar_end")))
             return None, None, False, None
@@ -204,7 +259,7 @@ class Engine:
         candidates.sort(key=lambda item: item[0])
         # Keep an open task tied to its original event, even when the
         # calendar starts advertising a later collection.
-        if s.get("open"):
+        if s.get("open") and not s.get("pending_rebind"):
             current = next((item for item in candidates if item[1] == s.get("active_token")), None)
             original_due = parse_dt(s.get("due_at_open")) or parse_dt(s.get("due"))
             if current:
@@ -235,7 +290,8 @@ class Engine:
         elif kind in ("monthly", "yearly"):
             due, token = fixed_schedule(
                 now, c,
-                None if s.get("last_completed") else parse_dt(s.get("created")),
+                parse_dt(s.get("schedule_anchor")) or
+                (None if s.get("last_completed") else parse_dt(s.get("created"))),
                 s.get("completed_token"),
             )
             active = now >= due
@@ -249,8 +305,11 @@ class Engine:
             completed_slot = parse_dt(s.get("completed_token", "")[7:]) if str(s.get("completed_token", "")).startswith("weekly:") else None
             if completed_slot and completed_slot >= slot:
                 slot = completed_slot + timedelta(days=7)
-            elif s.get("last_completed") is None and parse_dt(s["created"]) > slot:
-                slot += timedelta(days=7)
+            elif not completed_slot:
+                anchor = parse_dt(s.get("schedule_anchor")) or (
+                    parse_dt(s.get("created")) if s.get("last_completed") is None else None)
+                if anchor and anchor > slot:
+                    slot += timedelta(days=7)
             due = slot
             token = "weekly:" + slot.isoformat()
             active = now >= slot
@@ -346,11 +405,31 @@ class Engine:
         async with self.lock:
             now = dt_util.now()
             s = self.state(entry)
-            if self.conf(entry)["trigger_type"] == "calendar":
-                due, token, active, end = await self.calculate_calendar(entry, now)
-            else:
-                due, token, active, end = self.calculate(entry, now)
             old = deepcopy(s)
+            try:
+                rule_changed = self.reconcile_opening_rule(entry, s, now)
+                if self.conf(entry)["trigger_type"] == "calendar":
+                    due, token, active, end = await self.calculate_calendar(entry, now)
+                else:
+                    due, token, active, end = self.calculate(entry, now)
+            except (Exception, asyncio.CancelledError):
+                # Retry the configuration reconciliation on the next evaluation
+                # if the new rule could not be calculated.
+                s.clear()
+                s.update(old)
+                raise
+            # A carried-over open task keeps its original opening date. Bind
+            # it to the new rule only when an actual occurrence becomes active.
+            if s.get("open") and s.get("pending_rebind"):
+                if active and token is not None:
+                    s["active_token"] = token
+                    s.pop("pending_rebind", None)
+                    if self.conf(entry)["trigger_type"] in ("numeric", "state"):
+                        s["latched"] = True
+                else:
+                    end = None
+            if s.get("open") and s.get("carried_open"):
+                due = parse_dt(s.get("due_at_open")) or due
             s["completed_early_today"] = self.completed_early_today(s, now)
             s["entity_warnings"] = self.entity_warnings(entry)
             s["due"] = due.isoformat() if due else None
@@ -363,7 +442,7 @@ class Engine:
                     s["latched"] = False
                     s["completed_token"] = None
             snoozed = bool(s.get("snooze_until"))
-            if s.get("open") and self.close_condition(entry, now, end):
+            if s.get("open") and not rule_changed and self.close_condition(entry, now, end):
                 self._finish(s, now, "auto_completed")
                 if s.get("active_token"):
                     s["completed_token"] = s["active_token"]
@@ -376,6 +455,8 @@ class Engine:
                         s["due"] = now.isoformat()
                     s["due_at_open"] = due.isoformat() if due else None
                     s["active_token"] = token
+                    s.pop("pending_rebind", None)
+                    s.pop("carried_open", None)
                     if self.conf(entry)["trigger_type"] == "calendar":
                         # Only persist an end time belonging to this occurrence.
                         s["calendar_end"] = end.isoformat() if end else None
@@ -400,6 +481,8 @@ class Engine:
 
     def _finish(self, s, now, action):
         s["open"] = False
+        s.pop("pending_rebind", None)
+        s.pop("carried_open", None)
         s["last_completed"] = now.isoformat()
         s["snooze_until"] = None
         self.record(s, action, now)
@@ -536,9 +619,26 @@ class Engine:
                 changes["close_entity"] = new_id
             if not changes:
                 continue
-            # Options override data; preserve all existing task settings.
-            options = {**entry.options, **changes}
-            self.hass.config_entries.async_update_entry(entry, options=options)
+            # A registry rename is the same source, not a new opening rule.
+            # Update the persisted identity alongside the config entry.
+            async with self.lock:
+                state = self.state(entry)
+                old_signature = self.opening_signature(entry)
+                changed = False
+                if "trigger_entity" in changes:
+                    if state.get("opening_signature") == old_signature:
+                        state["opening_signature"] = {
+                            **old_signature, "trigger_entity": new_id}
+                        changed = True
+                    if old_signature["kind"] in ("numeric", "state"):
+                        for key in ("active_token", "completed_token", "next_token"):
+                            if state.get(key) == "entity:" + old_id:
+                                state[key] = "entity:" + new_id
+                                changed = True
+                options = {**entry.options, **changes}
+                self.hass.config_entries.async_update_entry(entry, options=options)
+                if changed:
+                    await self.save()
 
     @callback
     def _state_event(self, event):

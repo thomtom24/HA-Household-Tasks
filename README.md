@@ -64,6 +64,14 @@ Fixed weekly, monthly and yearly schedules become due at midnight in Home Assist
 
 Completion-relative tasks recur from the actual completion date. For example, completing a seven-day task on Tuesday evening makes it due the following Tuesday at midnight. The first due date is optional and applies before the first completion.
 
+### Editing existing tasks
+
+Editing a task's opening rule recalculates its schedule without deleting completion history or changing its entity ID. Cosmetic edits and equivalent opening settings leave the current occurrence unchanged. Changed fixed weekly, monthly and yearly schedules start from the date of the edit; completion-relative schedules continue to use the last actual completion.
+
+An outstanding task retains its original opening timestamp and due date. When the new opening rule becomes active, the existing task is associated with that occurrence rather than opening a duplicate. If the new rule is not active yet, the outstanding task remains open until completed or its applicable closing rule is met. An opening-rule edit does not itself automatically complete an outstanding task during that evaluation; subsequent evaluations apply the configured closing rules. A closing-only edit applies its new closing condition without resetting the opening rule.
+
+Home Assistant entity-registry renames are treated as the same source rather than a newly configured trigger. A closed task may open again after a genuine opening-rule change if the new condition is already met. Existing snooze deadlines are retained; wider skip, snooze and reopen semantics are still under review.
+
 ### Closing conditions
 
 - Manual completion.
