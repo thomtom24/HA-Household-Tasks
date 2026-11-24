@@ -73,7 +73,7 @@ Completion-relative tasks recur from the actual completion date. For example, co
 - The opening trigger is no longer true (numeric or state-triggered tasks only).
 - Manual completion combined with any applicable automatic closing condition.
 
-**Known calendar limitation:** the current scheduler can expire open calendar tasks when their matched event ends even when manual completion is configured. Do not depend on calendar tasks remaining open indefinitely after the event ends.
+An open calendar task remains tied to its original occurrence until its configured closing condition is satisfied. The event ending only completes a task configured for calendar-end completion. If another matching event becomes due while a task is still open, the original occurrence is retained; after completion, the scheduler can open the next eligible occurrence. Individual missed occurrences are not queued.
 
 ### Calendar example
 
