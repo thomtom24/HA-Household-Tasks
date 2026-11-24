@@ -1,12 +1,24 @@
 complete:
   fields:
     entry_id:
+      description: "Exact task config entry ID. Provide either entry_id or task, not both."
       example: "entry_id"
+      selector:
+        text:
     task:
+      description: "Exact internal task name or config entry title. Must identify one task."
       example: "change_bedding"
+      selector:
+        text:
 complete_early:
   fields:
     entry_id:
+      description: "Exact task config entry ID. Provide either entry_id or task, not both."
       example: "entry_id"
+      selector:
+        text:
     task:
+      description: "Exact internal task name or config entry title. Must identify one task."
       example: "change_bedding"
+      selector:
+        text:
