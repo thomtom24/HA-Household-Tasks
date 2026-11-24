@@ -23,6 +23,7 @@ def response(*events):
 
 def make_engine(rule="manual", offset=0):
     engine = Engine.__new__(Engine)
+    engine.cyclic_entries = set()
     engine.history = {}
     engine.lock = asyncio.Lock()
     engine.calendar_cache = {}

@@ -14,6 +14,7 @@ NOW = datetime(2026, 1, 14, 12, tzinfo=timezone.utc)
 
 def make_engine(**config):
     engine = Engine.__new__(Engine)
+    engine.cyclic_entries = set()
     engine.history = {}
     engine.calendar_failures = {}
     engine.lock = asyncio.Lock()
@@ -213,6 +214,7 @@ def test_registry_rename_preserves_completed_numeric_latch():
             target.options = options
         engine.hass.config_entries = SimpleNamespace(async_update_entry=Mock(side_effect=update_entry))
         engine.refresh_entity_subscriptions = Mock()
+        engine.refresh_dependency_cycles = Mock()
         with patch("custom_components.household_tasks.dt_util.now", return_value=NOW):
             await engine.evaluate(entry)
             await engine.act("task", "complete")

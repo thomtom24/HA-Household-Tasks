@@ -10,6 +10,7 @@ from custom_components.household_tasks import Engine
 
 def make_engine():
     engine = Engine.__new__(Engine)
+    engine.cyclic_entries = set()
     entry = SimpleNamespace(entry_id="task")
     engine.entries = {"task": entry}
     engine.history = {}

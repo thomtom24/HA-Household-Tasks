@@ -58,7 +58,8 @@
       "invalid_settings": "Enter valid settings for this step.",
       "invalid_task_name": "Enter an internal name of 1–128 characters containing at least one ASCII letter or digit.",
       "invalid_text": "Enter a non-blank value within the allowed length (names and categories: 128, states: 255, calendar filter: 512 characters).",
-      "invalid_entity": "Select a valid Home Assistant entity ID."
+      "invalid_entity": "Select a valid Home Assistant entity ID.",
+      "circular_dependency": "These rules create a circular dependency between household tasks. Change the opening or closing rule; aggregate task sensors cannot be used as task dependencies."
     },
     "abort": {
       "invalid_name": "The task name is invalid"
@@ -125,7 +126,8 @@
       "invalid_settings": "Enter valid settings for this step.",
       "invalid_task_name": "Enter an internal name of 1–128 characters containing at least one ASCII letter or digit.",
       "invalid_text": "Enter a non-blank value within the allowed length (names and categories: 128, states: 255, calendar filter: 512 characters).",
-      "invalid_entity": "Select a valid Home Assistant entity ID."
+      "invalid_entity": "Select a valid Home Assistant entity ID.",
+      "circular_dependency": "These rules create a circular dependency between household tasks. Change the opening or closing rule; aggregate task sensors cannot be used as task dependencies."
     }
   }
 }

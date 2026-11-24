@@ -36,6 +36,7 @@ INVALID_DATA = [
 
 def engine_for_selection():
     engine = Engine.__new__(Engine)
+    engine.cyclic_entries = set()
     engine.entries = {
         "first": SimpleNamespace(entry_id="first", unique_id="first_task", title="First"),
         "second": SimpleNamespace(entry_id="second", unique_id="second_task", title="Second"),
