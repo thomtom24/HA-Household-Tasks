@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import datetime, timedelta, time as datetime_time
 import voluptuous as vol
 from homeassistant.auth.permissions.const import POLICY_CONTROL
-from homeassistant.core import HomeAssistant, callback, valid_entity_id
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError, Unauthorized, UnknownUser
 from homeassistant.helpers import discovery, entity_registry as er
 from homeassistant.components.http import StaticPathConfig
@@ -22,6 +22,7 @@ from homeassistant.util import dt as dt_util
 from .scheduling import fixed_schedule
 from .date_rules import completion_due_date, offset_due_date, legacy_calendar_days
 from .const import DOMAIN, PLATFORMS, DEFAULTS
+from .dependencies import active_entity_ids, cyclic_entries
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -116,6 +117,7 @@ class Engine:
         self.calendar_cache = {}
         self.calendar_failures = {}
         self.evaluation_errors = set()
+        self.cyclic_entries = set()
         self.evaluation_jobs = {}
         self.tick_running = False
 
@@ -573,7 +575,8 @@ class Engine:
     async def evaluate(self, entry):
         async with self.lock:
             # A queued evaluation may have outlived its original config entry.
-            if self.entries.get(entry.entry_id) is not entry:
+            if (self.entries.get(entry.entry_id) is not entry
+                    or entry.entry_id in self.cyclic_entries):
                 return
             now = dt_util.now()
             s = self.state(entry)
@@ -596,8 +599,9 @@ class Engine:
                 s.clear()
                 s.update(old)
                 raise
-            if self.entries.get(entry.entry_id) is not entry:
-                # The calendar request may have yielded while the entry unloaded.
+            if (self.entries.get(entry.entry_id) is not entry
+                    or entry.entry_id in self.cyclic_entries):
+                # The calendar request may have yielded during unload or a graph change.
                 s.clear()
                 s.update(old)
                 return
@@ -853,13 +857,13 @@ class Engine:
     def _registry_event(self, event):
         """Follow entity_id renames reported by the entity registry."""
         data = event.data
-        if data.get("action") != "update":
-            return
         old_id = data.get("old_entity_id")
         new_id = data.get("entity_id")
-        if not old_id or not new_id or old_id == new_id:
-            return
-        self.hass.async_create_task(self._apply_entity_rename(old_id, new_id))
+        if data.get("action") == "update" and old_id and new_id and old_id != new_id:
+            self.hass.async_create_task(self._apply_entity_rename(old_id, new_id))
+        elif new_id in self.entity_dependencies:
+            # A referenced sensor may have been registered or removed.
+            self.refresh_dependency_cycles()
 
     async def _apply_entity_rename(self, old_id, new_id):
         for entry in list(self.entries.values()):
@@ -894,18 +898,20 @@ class Engine:
                 self.refresh_entity_subscriptions()
                 if changed:
                     await self.save()
+        self.refresh_dependency_cycles()
 
     def active_dependencies(self, entry):
-        """Return only entity IDs used by the currently selected task rules."""
-        config = self.conf(entry)
-        dependencies = []
-        if config["trigger_type"] in ("calendar", "date_entity", "numeric", "state"):
-            dependencies.append(config.get("trigger_entity"))
-        if config["close_type"] in ("entity_state", "entity_numeric",
-                                    "manual_or_entity_state", "manual_or_entity_numeric"):
-            dependencies.append(config.get("close_entity"))
-        return {entity_id for entity_id in dependencies
-                if isinstance(entity_id, str) and valid_entity_id(entity_id)}
+        return active_entity_ids(self.conf(entry))
+
+    @callback
+    def refresh_dependency_cycles(self):
+        """Refresh transient cycle warnings without changing persisted history."""
+        configs = {entry_id: self.conf(entry) for entry_id, entry in self.entries.items()}
+        updated = cyclic_entries(configs, er.async_get(self.hass)) if configs else set()
+        changed = self.cyclic_entries ^ updated
+        self.cyclic_entries = updated
+        for entry_id in sorted(changed & self.entries.keys()):
+            self._notify_evaluation_warning(entry_id)
 
     @callback
     def refresh_entity_subscriptions(self):
@@ -920,6 +926,7 @@ class Engine:
         for entity_id in dependencies.keys() - self.entity_subscriptions.keys():
             self.entity_subscriptions[entity_id] = async_track_state_change_event(
                 self.hass, entity_id, self._state_event)
+        self.refresh_dependency_cycles()
 
     @callback
     def _state_event(self, event):
@@ -935,7 +942,8 @@ class Engine:
                for entry in entries):
             self.calendar_cache.pop(entity_id, None)
         for entry in entries:
-            self.request_evaluation(entry)
+            if entry.entry_id not in self.cyclic_entries:
+                self.request_evaluation(entry)
 
 async def async_setup(hass: HomeAssistant, config):
     await hass.http.async_register_static_paths([
@@ -969,6 +977,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         engine.refresh_runtime_listeners()
         forwarding_started = True
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        # New status sensors now have registry identities.
+        engine.refresh_dependency_cycles()
         await engine.evaluate(entry)
         entry.async_on_unload(entry.add_update_listener(_options_updated))
     except (Exception, asyncio.CancelledError):

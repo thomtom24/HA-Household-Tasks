@@ -23,6 +23,8 @@ class TaskStatusSensor(SensorEntity):
         c = self.engine.conf(self.entry)
         completed_early_today = self.engine.completed_early_today(s, dt_util.now())
         warnings = list(s.get("entity_warnings", []))
+        if self.entry.entry_id in self.engine.cyclic_entries:
+            warnings.append("Circular task dependency detected. Automatic transitions paused; edit the task rules to resolve the loop.")
         if self.entry.entry_id in self.engine.evaluation_errors:
             warnings.append("Task evaluation failed; check Home Assistant logs. Automatic retry enabled.")
         return {

@@ -10,6 +10,7 @@ from custom_components.household_tasks import Engine
 
 def make_engine():
     engine = Engine.__new__(Engine)
+    engine.cyclic_entries = set()
     bad = SimpleNamespace(entry_id="bad")
     good = SimpleNamespace(entry_id="good")
     engine.entries = {"bad": bad, "good": good}

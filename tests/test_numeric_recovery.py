@@ -20,6 +20,7 @@ def test_invalid_comparisons(value):
 
 def make_engine(close_type="manual"):
     engine = Engine.__new__(Engine)
+    engine.cyclic_entries = set()
     engine.history = {}
     engine.lock = asyncio.Lock()
     engine.save = AsyncMock()

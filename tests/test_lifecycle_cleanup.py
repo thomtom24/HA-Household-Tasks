@@ -26,6 +26,7 @@ def fixture():
         engine = Engine(hass)
     hass.data[DOMAIN] = engine
     engine.evaluate = AsyncMock()
+    engine.refresh_dependency_cycles = Mock()
     engine.save = AsyncMock()
     engine.publish_open_tasks = Mock()
     return hass, engine

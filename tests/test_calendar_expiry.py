@@ -20,6 +20,7 @@ def make_event(start=START, end=END):
 
 def make_engine(rule):
     engine = Engine.__new__(Engine)
+    engine.cyclic_entries = set()
     engine.history = {}
     engine.calendar_failures = {}
     engine.lock = asyncio.Lock()

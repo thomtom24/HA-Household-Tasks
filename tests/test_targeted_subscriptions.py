@@ -12,6 +12,7 @@ from custom_components.household_tasks.const import DOMAIN
 
 def make_engine():
     engine = Engine.__new__(Engine)
+    engine.cyclic_entries = set()
     engine.history = {}
     engine.entries = {}
     engine.entity_dependencies = {}
@@ -21,6 +22,7 @@ def make_engine():
     engine.evaluation_jobs = {}
     engine.lock = asyncio.Lock()
     engine.refresh_runtime_listeners = Mock()
+    engine.refresh_dependency_cycles = Mock()
     engine.publish_open_tasks = Mock()
     engine.evaluate = AsyncMock()
     engine._evaluate_background = AsyncMock()

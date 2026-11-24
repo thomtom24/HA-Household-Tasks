@@ -14,6 +14,7 @@ NOW = datetime(2026, 1, 14, 12, tzinfo=timezone.utc)
 
 def make_engine(kind="numeric"):
     engine = Engine.__new__(Engine)
+    engine.cyclic_entries = set()
     engine.history = {}
     engine.lock = asyncio.Lock()
     engine.calendar_cache = {}

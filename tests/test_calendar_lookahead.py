@@ -28,6 +28,7 @@ def make_entry(name, offset=None, **settings):
 
 def make_engine(*entries, events=()):
     engine = Engine.__new__(Engine)
+    engine.cyclic_entries = set()
     engine.history = {}
     engine.entries = {entry.entry_id: entry for entry in entries}
     engine.calendar_cache = {}

@@ -10,6 +10,7 @@ from custom_components.household_tasks.sensor import AggregateTaskSensor, TaskSt
 
 def engine_with_tasks(*tasks):
     engine = Engine.__new__(Engine)
+    engine.cyclic_entries = set()
     engine.entries = {}
     engine.history = {}
     engine.aggregate_listeners = []

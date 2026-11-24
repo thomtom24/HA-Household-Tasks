@@ -45,6 +45,7 @@ def test_projection_preserves_missing_end_and_empty_title():
 def test_routine_error_logs_do_not_include_exception_payload(caplog, failure):
     async def scenario():
         engine = Engine.__new__(Engine)
+        engine.cyclic_entries = set()
         entry = SimpleNamespace(entry_id="task")
         engine.entries = {"task": entry}
         engine.evaluation_errors = set()
@@ -67,6 +68,7 @@ def test_routine_error_logs_do_not_include_exception_payload(caplog, failure):
 def test_debug_logging_can_still_show_traceback(caplog):
     async def scenario():
         engine = Engine.__new__(Engine)
+        engine.cyclic_entries = set()
         entry = SimpleNamespace(entry_id="task")
         engine.entries = {"task": entry}
         engine.evaluation_errors = set()

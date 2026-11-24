@@ -5,8 +5,9 @@ from datetime import date
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import valid_entity_id
-from homeassistant.helpers import selector
+from homeassistant.helpers import entity_registry as er, selector
 from .const import DOMAIN, DEFAULTS
+from .dependencies import cyclic_entries
 
 TRIGGERS = ["completion", "weekly", "monthly", "yearly", "calendar", "date_entity", "numeric", "state"]
 CLOSES = ["manual", "entity_state", "entity_numeric", "calendar_end",
@@ -167,6 +168,18 @@ class TaskSteps:
             self.values["calendar_offset_days"] = int(values["calendar_offset_hours"]) // 24
         self.editing = editing
 
+    def _cycle_error(self):
+        """Check the complete proposed rule set, not stale wizard fields."""
+        configs = {entry.entry_id: {**DEFAULTS, **entry.data, **entry.options}
+                   for entry in self.hass.config_entries.async_entries(DOMAIN)}
+        candidate = self.entry.entry_id if self.editing else "<new>"
+        configs[candidate] = self.values
+        if candidate in cyclic_entries(configs, er.async_get(self.hass)):
+            return self.async_show_form(
+                step_id="trigger_choice", data_schema=trigger_choice_schema(self.values),
+                errors={"base": "circular_dependency"})
+        return None
+
     def _validated(self, step, schema, user_input):
         """Validate even direct step calls before modifying wizard state."""
         try:
@@ -277,6 +290,8 @@ class HouseholdTasksConfigFlow(TaskSteps, config_entries.ConfigFlow, domain=DOMA
         return await self.async_step_details(user_input)
 
     async def _finish(self):
+        if (error := self._cycle_error()) is not None:
+            return error
         key = internal_key(self.values["name"])
         if not key:
             return self.async_abort(reason="invalid_name")
@@ -297,6 +312,8 @@ class HouseholdTasksOptionsFlow(TaskSteps, config_entries.OptionsFlow):
         return await self.async_step_details(user_input)
 
     async def _finish(self):
+        if (error := self._cycle_error()) is not None:
+            return error
         values = {k: v for k, v in self.values.items()
                   if k not in ("pause_in_holiday_mode", "pause_entities", "_reset_trigger_state")}
         return self.async_create_entry(title="", data=values)
