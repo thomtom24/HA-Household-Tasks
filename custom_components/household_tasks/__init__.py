@@ -256,7 +256,10 @@ class Engine:
         except Exception:
             # Do not represent a narrower response as covering a longer offset.
             # Stale-data trust and expiry are addressed separately.
-            return cached[1] if covers_window else None
+            task_end = self.calendar_window_end(now, offset_days)
+            covers_task = (cached is not None and cached[0] <= now
+                           and cached[2] >= task_end)
+            return cached[1] if covers_task else None
 
     async def calculate_calendar(self, entry, now):
         c, s = self.conf(entry), self.state(entry)
