@@ -172,6 +172,12 @@ Task configuration and history are stored locally within Home Assistant. The int
 
 For bug reports or feature requests, use [GitHub Issues](https://github.com/thomtom24/HA-Household-Tasks/issues). Release-specific changes are available through [GitHub Releases](https://github.com/thomtom24/HA-Household-Tasks/releases) and repository history.
 
+## Development workflow security
+
+GitHub Actions dependencies are pinned to full commit SHAs and Dependabot proposes weekly action updates for review. Workflow repository permissions are read-only, and checkout steps do not persist Git credentials. The required test workflow runs both Python and JavaScript regression tests.
+
+To regenerate branding PNGs, run **Generate Home Assistant brand assets** under GitHub Actions or update the source SVG in a pull request. Download the `household-tasks-brand-assets` artifact (retained for seven days), review the PNGs and include them under `custom_components/household_tasks/brand/` in a normal pull request. The workflow no longer pushes directly to the protected main branch.
+
 ## AI-assisted development disclaimer
 
 This project was produced using ChatGPT in response to human prompts and direction. It was not created solely by a human developer. The project owner provides requirements, reviews changes and participates in testing, while ChatGPT generates and assists with implementation, documentation and automated tests.
