@@ -1,16 +1,8 @@
 """Standalone recurrence regression tests: python -m unittest discover -s tests."""
-import importlib.util
 from datetime import datetime
-from pathlib import Path
 import unittest
 
-spec = importlib.util.spec_from_file_location(
-    "household_tasks_scheduling",
-    Path(__file__).resolve().parents[1] / "custom_components" / "household_tasks" / "scheduling.py",
-)
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
-fixed_schedule = module.fixed_schedule
+from custom_components.household_tasks.scheduling import fixed_schedule
 
 
 class FixedScheduleTests(unittest.TestCase):
@@ -56,7 +48,7 @@ class FixedScheduleTests(unittest.TestCase):
     def test_complete_next_month_early(self):
         now = datetime(2026, 11, 14, 12)
         config = {"trigger_type": "monthly", "month_day": 20}
-        due, token = fixed_schedule(now, config, None)
+        due, token = fixed_schedule(now, config, now)
         self.assertEqual(due, datetime(2026, 11, 20))
         next_due, _ = fixed_schedule(now, config, None, token)
         self.assertEqual(next_due, datetime(2026, 12, 20))
@@ -64,9 +56,19 @@ class FixedScheduleTests(unittest.TestCase):
     def test_complete_next_year_early(self):
         now = datetime(2026, 11, 14, 12)
         config = {"trigger_type": "yearly", "year_month": 12, "month_day": 1}
-        due, token = fixed_schedule(now, config, None)
+        due, token = fixed_schedule(now, config, now)
         next_due, _ = fixed_schedule(now, config, None, token)
         self.assertEqual(next_due, datetime(2027, 12, 1))
+
+    def test_existing_uncompleted_occurrence_remains_overdue(self):
+        now = datetime(2026, 11, 14, 12)
+        for config, expected in [
+            ({"trigger_type": "monthly", "month_day": 20}, datetime(2026, 10, 20)),
+            ({"trigger_type": "yearly", "year_month": 12, "month_day": 1}, datetime(2025, 12, 1)),
+        ]:
+            with self.subTest(config=config):
+                due, _ = fixed_schedule(now, config, None)
+                self.assertEqual(due, expected)
 
     def test_initial_schedule_skips_past(self):
         now = datetime(2026, 11, 13, 12)

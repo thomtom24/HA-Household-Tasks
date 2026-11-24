@@ -1,0 +1,6 @@
+homeassistant==2025.12.0
+pytest==8.4.2
+pytest-cov==7.0.0
+
+# aiodns 3.x uses the pycares 4.x result API.
+pycares==4.11.0
