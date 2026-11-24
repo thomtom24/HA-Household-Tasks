@@ -134,6 +134,12 @@ A change to the latest-open sensor does not necessarily mean a new task opened: 
 
 The integration registers backend actions for completion and early completion. The unfinished skip, snooze and reopen actions have been removed. Previously snoozed outstanding tasks are restored on evaluation after upgrade; existing historical records are retained.
 
+### Task configuration validation
+
+New and edited tasks validate the active rules before saving. Internal names, friendly names and categories are limited to 128 characters; state values to 255 and optional calendar filters to 512. Numeric thresholds must be finite. Schedule numbers must be whole numbers within the displayed limits. Date-entity offsets support -3650 to 3650 days; calendar offsets remain 0 to 365 days. Calendar-end rules require a calendar trigger and trigger-inactive rules require a numeric or state trigger.
+
+Entity IDs must be valid Home Assistant entity IDs, but devices need not be online to configure a task. Optional first due dates, calendar filters and areas can be cleared. Existing stored configurations are not automatically rewritten; if an older value exceeds the new limits, correct it when editing the task.
+
 ### Completion action inputs
 
 Both `household_tasks.complete` and `household_tasks.complete_early` accept exactly one non-blank text field: `entry_id` (the exact config entry ID, available as `task_entry_id` on the status sensor) or `task` (the exact internal task name or config entry title). The built-in dashboard uses `entry_id`. For example:
