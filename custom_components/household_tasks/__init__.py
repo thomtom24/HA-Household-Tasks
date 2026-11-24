@@ -140,10 +140,11 @@ class Engine:
         if previous is None:
             return False
         for key in ("active_token", "completed_token", "next_token", "calendar_end",
-                    "latched", "schedule_anchor", "pending_rebind"):
+                    "latched", "schedule_anchor", "pending_rebind", "carried_open"):
             state.pop(key, None)
         if state.get("open"):
             state["pending_rebind"] = True
+            state["carried_open"] = True
         else:
             state.pop("due_at_open", None)
             state.pop("due", None)
@@ -420,8 +421,7 @@ class Engine:
                         s["latched"] = True
                 else:
                     end = None
-            if s.get("open") and (rule_changed or old.get("pending_rebind") or
-                                  s.get("schedule_anchor")):
+            if s.get("open") and s.get("carried_open"):
                 due = parse_dt(s.get("due_at_open")) or due
             s["completed_early_today"] = self.completed_early_today(s, now)
             s["entity_warnings"] = self.entity_warnings(entry)
@@ -449,6 +449,7 @@ class Engine:
                     s["due_at_open"] = due.isoformat() if due else None
                     s["active_token"] = token
                     s.pop("pending_rebind", None)
+                    s.pop("carried_open", None)
                     if self.conf(entry)["trigger_type"] == "calendar":
                         # Only persist an end time belonging to this occurrence.
                         s["calendar_end"] = end.isoformat() if end else None
@@ -474,6 +475,7 @@ class Engine:
     def _finish(self, s, now, action):
         s["open"] = False
         s.pop("pending_rebind", None)
+        s.pop("carried_open", None)
         s["last_completed"] = now.isoformat()
         s["snooze_until"] = None
         self.record(s, action, now)
@@ -610,9 +612,26 @@ class Engine:
                 changes["close_entity"] = new_id
             if not changes:
                 continue
-            # Options override data; preserve all existing task settings.
-            options = {**entry.options, **changes}
-            self.hass.config_entries.async_update_entry(entry, options=options)
+            # A registry rename is the same source, not a new opening rule.
+            # Update the persisted identity alongside the config entry.
+            async with self.lock:
+                state = self.state(entry)
+                old_signature = self.opening_signature(entry)
+                changed = False
+                if "trigger_entity" in changes:
+                    if state.get("opening_signature") == old_signature:
+                        state["opening_signature"] = {
+                            **old_signature, "trigger_entity": new_id}
+                        changed = True
+                    if old_signature["kind"] in ("numeric", "state"):
+                        for key in ("active_token", "completed_token", "next_token"):
+                            if state.get(key) == "entity:" + old_id:
+                                state[key] = "entity:" + new_id
+                                changed = True
+                options = {**entry.options, **changes}
+                self.hass.config_entries.async_update_entry(entry, options=options)
+                if changed:
+                    await self.save()
 
     @callback
     def _state_event(self, event):
