@@ -787,12 +787,12 @@ class Engine:
     def active_dependencies(self, entry):
         """Return only entity IDs used by the currently selected task rules."""
         config = self.conf(entry)
-        dependencies = set()
+        dependencies = []
         if config["trigger_type"] in ("calendar", "date_entity", "numeric", "state"):
-            dependencies.add(config.get("trigger_entity"))
+            dependencies.append(config.get("trigger_entity"))
         if config["close_type"] in ("entity_state", "entity_numeric",
                                     "manual_or_entity_state", "manual_or_entity_numeric"):
-            dependencies.add(config.get("close_entity"))
+            dependencies.append(config.get("close_entity"))
         return {entity_id for entity_id in dependencies
                 if isinstance(entity_id, str) and valid_entity_id(entity_id)}
 
