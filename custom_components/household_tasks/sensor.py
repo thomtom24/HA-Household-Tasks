@@ -1,5 +1,6 @@
 """Task status sensors for Home Assistant."""
 from homeassistant.components.sensor import SensorEntity
+from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
 from .const import DOMAIN
 
@@ -51,3 +52,54 @@ class TaskStatusSensor(SensorEntity):
 
 async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities([TaskStatusSensor(hass.data[DOMAIN], entry)])
+
+class AggregateTaskSensor(SensorEntity):
+    """A domain-level sensor independent of individual task config entries."""
+
+    _attr_should_poll = False
+
+    def __init__(self, engine, key, name, icon):
+        self.engine = engine
+        self.key = key
+        self.entity_id = f"sensor.household_tasks_{key}"
+        self._attr_unique_id = f"household_tasks_{key}"
+        self._attr_name = name
+        self._attr_icon = icon
+        self._snapshot = engine.aggregate_snapshot()[key]
+
+    @property
+    def native_value(self):
+        return self._snapshot[0]
+
+    @property
+    def extra_state_attributes(self):
+        return self._snapshot[1]
+
+    async def async_added_to_hass(self):
+        # Refresh if a task changed while HA was registering this entity.
+        self._snapshot = self.engine.aggregate_snapshot()[self.key]
+        self.engine.aggregate_listeners.append(self._changed)
+
+    async def async_will_remove_from_hass(self):
+        if self._changed in self.engine.aggregate_listeners:
+            self.engine.aggregate_listeners.remove(self._changed)
+
+    @callback
+    def _changed(self, snapshot):
+        value = snapshot[self.key]
+        if value != self._snapshot:
+            self._snapshot = value
+            self.async_write_ha_state()
+
+
+async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
+    """Set up aggregate sensors once via domain discovery, not per task."""
+    if not discovery_info or not discovery_info.get("aggregate_sensors"):
+        return
+    engine = hass.data[DOMAIN]
+    async_add_entities([
+        AggregateTaskSensor(engine, "open_names", "Household Tasks Open List",
+                            "mdi:format-list-checks"),
+        AggregateTaskSensor(engine, "latest_open", "Household Tasks Latest Open",
+                            "mdi:clipboard-text-clock-outline"),
+    ])
