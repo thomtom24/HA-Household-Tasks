@@ -253,3 +253,21 @@ def test_cancellation_propagates_without_creating_failure():
         assert not engine.calendar_failures
 
     asyncio.run(scenario())
+
+
+def test_missing_service_invalidates_trust_even_with_fresh_cache():
+    async def scenario():
+        engine, entry, _, services = make_engine("calendar_end")
+        end = NOW + timedelta(minutes=2)
+        services.async_call.return_value = response(event(NOW, end))
+        with patch("custom_components.household_tasks.dt_util.now") as clock:
+            clock.return_value = NOW
+            await engine.evaluate(entry)
+            services.has_service.return_value = False
+            clock.return_value = end
+            await engine.evaluate(entry)
+            assert engine.state(entry)["open"]
+            assert engine.state(entry)["entity_warnings"]
+            assert services.async_call.await_count == 1
+
+    asyncio.run(scenario())
