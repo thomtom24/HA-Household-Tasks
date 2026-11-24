@@ -223,6 +223,7 @@ class Engine:
 
     def _calendar_failed(self, entity_id, now, reason):
         """Back off per calendar, sharing failures across dependent tasks."""
+        now = dt_util.as_utc(now)
         previous = self.calendar_failures.get(entity_id)
         count = min(previous[2] + 1, 5) if previous else 1
         retry = now + timedelta(minutes=min(2 ** (count - 1), 15))
@@ -278,17 +279,17 @@ class Engine:
             return cached[1] if cached is not None and cached[2] >= task_end else None
 
         failure = self.calendar_failures.get(entity_id)
-        if failure and failure[0] <= now < failure[1]:
+        if failure and failure[0] <= dt_util.as_utc(now) < failure[1]:
             return fallback()
         state = self.hass.states.get(entity_id)
         if state is None or state.state in ("unknown", "unavailable", ""):
             self._calendar_failed(entity_id, now, "calendar entity unavailable")
             return fallback()
-        if not failure and cached is not None and age < timedelta(minutes=5) and cached[2] >= end:
-            return cached[1]
         if not self.hass.services.has_service("calendar", "get_events"):
             self._calendar_failed(entity_id, now, "calendar service unavailable")
             return fallback()
+        if not failure and cached is not None and age < timedelta(minutes=5) and cached[2] >= end:
+            return cached[1]
         try:
             async with asyncio.timeout(15):
                 response = await self.hass.services.async_call(
