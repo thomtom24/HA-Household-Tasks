@@ -35,6 +35,7 @@ class TaskStatusSensor(SensorEntity):
             "completed_early_today": completed_early_today,
             "task_entry_id": self.entry.entry_id,
             "friendly_name": c.get("friendly_name") or self.entry.title,
+            "task_name": c.get("friendly_name") or self.entry.title,
             "category": c.get("category"), "area_id": c.get("area_id"),
             "trigger_type": c.get("trigger_type"),
             "close_type": c.get("close_type", "manual"),

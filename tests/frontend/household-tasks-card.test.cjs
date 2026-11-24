@@ -86,6 +86,7 @@ test('tab and range event handlers accept only supported choices', () => {
   const { card, buttons, range } = fixture();
   const button = { dataset: { tab: 'upcoming' } };
   buttons['[data-tab]'].push(button);
+  card._lastMarkup = undefined;
   card.render();
   button.onclick();
   assert.equal(card.filter, 'upcoming');
@@ -118,6 +119,7 @@ test('normal completion still sends one exact entry identifier', async () => {
   const { card, buttons, calls } = fixture({ task_entry_id: hostile });
   const button = { dataset: { complete: hostile } };
   buttons['[data-complete]'].push(button);
+  card._lastMarkup = undefined;
   card.render();
   await button.onclick();
   assert.equal(calls.length, 1);
@@ -145,4 +147,62 @@ test('early completion retains confirmation and exact entry identifier', async (
   assert.equal(button.disabled, true);
   await button.onclick();
   assert.equal(calls.length, 1);
+});
+
+test('renamed task entities remain discoverable', () => {
+  const {card, root} = fixture();
+  const state = card._hass.states['sensor.test_status'];
+  card.hass = {...card._hass, states: {'sensor.renamed':state}};
+  assert.ok(root.innerHTML.includes('Test task'));
+  assert.ok(root.innerHTML.includes('data-complete="task-1"'));
+});
+
+test('unavailable status sensors are not rendered as open tasks', () => {
+  const {root} = fixture({}, {}, 'unavailable');
+  assert.ok(root.innerHTML.includes('No tasks in this view.'));
+});
+
+test('unrelated state changes do not rebuild identical markup', () => {
+  const {card, root} = fixture();
+  let writes = 0, markup = root.innerHTML;
+  Object.defineProperty(root, 'innerHTML', {
+    get: () => markup, set: value => {writes++; markup = value;}
+  });
+  card.hass = {...card._hass, states:{...card._hass.states,'sensor.unrelated':{state:'1',attributes:{}}}};
+  assert.equal(writes, 0);
+});
+
+test('explicit task name preserves legitimate status suffix', () => {
+  const {root} = fixture({task_name:'Check boiler status'});
+  assert.ok(root.innerHTML.includes('Check boiler status'));
+});
+
+test('duplicate script registration is harmless', () => {
+  const {sandbox} = fixture();
+  let registrations = 0;
+  sandbox.customElements = {get: () => true, define: () => {registrations++;}};
+  vm.runInNewContext(source, sandbox);
+  assert.equal(registrations,0);
+  assert.equal(sandbox.window.customCards.length,1);
+});
+
+test('calendar dates use configured HA timezone rather than browser timezone', () => {
+  const {card,root} = fixture({due_at_open:'2026-01-01T01:00:00+00:00'});
+  card.hass = {...card._hass, config:{time_zone:'America/Los_Angeles'}, locale:{language:'en-GB',date_format:'DMY'}};
+  assert.ok(root.innerHTML.includes('31/12/2025'));
+});
+
+test('normal completion blocks concurrent double taps and reports errors', async () => {
+  const {card, sandbox} = fixture();
+  let reject, calls = 0, alerts = 0;
+  sandbox.alert = () => {alerts++;};
+  card._hass.callService = () => {calls++; return new Promise((_, r) => {reject = r;});};
+  const first = {disabled:false}, second = {disabled:false};
+  const pending = card.completeTask(first,'task-1',false);
+  await card.completeTask(second,'task-1',false);
+  assert.equal(calls,1);
+  reject(new Error('failure'));
+  await pending;
+  assert.equal(first.disabled,false);
+  assert.equal(alerts,1);
 });
