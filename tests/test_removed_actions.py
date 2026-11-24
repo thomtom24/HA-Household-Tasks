@@ -20,7 +20,7 @@ def make_engine(kind="numeric"):
     engine.calendar_failures = {}
     engine.save = AsyncMock()
     engine.notify = Mock()
-    source = SimpleNamespace(state="2")
+    source = SimpleNamespace(state="2", attributes={})
     engine.hass = SimpleNamespace(states=SimpleNamespace(get=lambda _: source))
     entry = SimpleNamespace(entry_id="task", data={
         "trigger_type": kind, "trigger_entity": "sensor.test",
