@@ -9,8 +9,8 @@ from pathlib import Path
 from datetime import datetime, timedelta, time as datetime_time
 import voluptuous as vol
 from homeassistant.auth.permissions.const import POLICY_CONTROL
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import ServiceValidationError, Unauthorized, UnknownUser
+from homeassistant.core import HomeAssistant, callback, CoreState
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError, Unauthorized, UnknownUser
 from homeassistant.helpers import discovery, entity_registry as er
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.helpers.entity_registry import EVENT_ENTITY_REGISTRY_UPDATED
@@ -104,8 +104,14 @@ class EvaluationJob:
 class Engine:
     def __init__(self, hass):
         self.hass = hass
-        self.store = Store(hass, 1, "household_tasks.history", private=True)
+        self.store = Store(hass, 1, "household_tasks.history", private=True, atomic_writes=True)
         self.history = {}
+        self.storage_dirty = False
+        self.storage_failed = False
+        self.storage_retry = None
+        self.reloading_entries = {}
+        self.last_aggregate_names = {}
+        self.calendar_requests = {}
         self.entries = {}
         self.listeners = []
         self.aggregate_listeners = []
@@ -122,7 +128,11 @@ class Engine:
         self.tick_running = False
 
     async def start(self):
-        self.history = await self.store.async_load() or {}
+        loaded = await self.store.async_load()
+        if loaded is not None and (not isinstance(loaded, dict) or
+                                   any(not isinstance(value, dict) for value in loaded.values())):
+            raise HomeAssistantError("Invalid household task history; restore from backup")
+        self.history = loaded or {}
         for name in ("complete", "complete_early"):
             self.hass.services.async_register(
                 DOMAIN, name, getattr(self, "_service_" + name),
@@ -132,19 +142,19 @@ class Engine:
     @callback
     def refresh_runtime_listeners(self):
         """Keep shared scheduler listeners only while tasks are loaded."""
-        if self.entries:
+        if self.entries or self.storage_dirty:
             if self.unsub_timer is None:
                 self.unsub_timer = async_track_time_interval(
                     self.hass, self._tick, timedelta(minutes=1))
-            if self.unsub_registry is None:
-                self.unsub_registry = self.hass.bus.async_listen(
-                    EVENT_ENTITY_REGISTRY_UPDATED, self._registry_event)
-        else:
-            for attr in ("unsub_timer", "unsub_registry"):
-                unsubscribe = getattr(self, attr)
-                if unsubscribe is not None:
-                    setattr(self, attr, None)
-                    unsubscribe()
+        elif self.unsub_timer is not None:
+            unsubscribe, self.unsub_timer = self.unsub_timer, None
+            unsubscribe()
+        if self.entries and self.unsub_registry is None:
+            self.unsub_registry = self.hass.bus.async_listen(
+                EVENT_ENTITY_REGISTRY_UPDATED, self._registry_event)
+        elif not self.entries and self.unsub_registry is not None:
+            unsubscribe, self.unsub_registry = self.unsub_registry, None
+            unsubscribe()
 
     async def detach_entry(self, entry):
         """Stop routing work to an entry and drain existing writes before reload."""
@@ -155,6 +165,7 @@ class Engine:
         self.evaluation_errors.discard(entry_id)
         self.refresh_entity_subscriptions()
         self.refresh_runtime_listeners()
+        self.prune_calendar_cache(dt_util.now())
         self.publish_open_tasks()
         job = self.evaluation_jobs.get(entry_id)
         if job is not None and job.task is not None:
@@ -232,10 +243,17 @@ class Engine:
             state["schedule_anchor"] = local_midnight(now).isoformat()
         return True
 
+    def aggregate_name(self, entry):
+        held = self.reloading_entries.get(entry.entry_id)
+        return held[1] if held is not None else self.conf(entry).get("friendly_name") or entry.title
+
     def aggregate_snapshot(self):
         """Return the existing aggregate sensor states and attributes."""
-        open_entries = [e for e in self.entries.values() if self.state(e).get("open")]
-        names = sorted((self.conf(e).get("friendly_name") or e.title
+        # Keep a task's last published aggregate membership during its options reload.
+        open_entries = [e for e in self.entries.values()
+                        if e.entry_id not in self.reloading_entries and self.state(e).get("open")]
+        open_entries.extend(e for e, _ in self.reloading_entries.values() if self.state(e).get("open"))
+        names = sorted((self.aggregate_name(e)
                         for e in open_entries), key=str.casefold)
         if not names:
             announcement = "There are no outstanding household tasks."
@@ -259,7 +277,7 @@ class Engine:
             latest_name = "none"
             latest_attributes = {"task_name": None, "opened_at": None, "open_count": 0}
         else:
-            latest_name = self.conf(latest).get("friendly_name") or latest.title
+            latest_name = self.aggregate_name(latest)
             latest_attributes = {
                 "task_name": latest_name,
                 "opened_at": self.state(latest).get("last_opened"),
@@ -272,6 +290,9 @@ class Engine:
 
     def publish_open_tasks(self):
         """Notify registered aggregate entities, never write raw states."""
+        self.last_aggregate_names = {
+            entry_id: self.aggregate_name(entry) for entry_id, entry in self.entries.items()
+        }
         if not self.aggregate_listeners:
             return
         snapshot = self.aggregate_snapshot()
@@ -284,11 +305,52 @@ class Engine:
 
     def notify(self, entry_id):
         self.publish_open_tasks()
-        for listener in list(self.listeners):
-            listener(entry_id)
+        self._notify_evaluation_warning(entry_id)
+
+    def _storage_warning(self, failed):
+        if self.storage_failed == failed:
+            return
+        self.storage_failed = failed
+        for entry_id in list(self.entries):
+            self._notify_evaluation_warning(entry_id)
 
     async def save(self):
-        await self.store.async_save(self.history)
+        """Keep unsaved history in memory and retry detectable write failures.
+
+        Store can swallow some write errors. Verify through its public load API
+        after each write, except when HA deliberately defers writes at shutdown.
+        The caller holds the shared history lock.
+        """
+        self.storage_dirty = True
+        snapshot = deepcopy(self.history)
+        try:
+            await self.store.async_save(snapshot)
+            if self.hass.state is not CoreState.stopping:
+                if await self.store.async_load() != snapshot:
+                    raise HomeAssistantError("Household task history write not verified")
+        except asyncio.CancelledError:
+            self._storage_warning(True)
+            raise
+        except Exception:
+            if not self.storage_failed:
+                _LOGGER.error("Household task history could not be saved; retrying")
+            self.storage_retry = dt_util.utcnow() + timedelta(minutes=1)
+            self._storage_warning(True)
+            self.refresh_runtime_listeners()
+            return False
+        self.storage_dirty = False
+        self.storage_retry = None
+        self._storage_warning(False)
+        self.refresh_runtime_listeners()
+        return True
+
+    async def retry_storage(self, now):
+        if not self.storage_dirty:
+            return
+        async with self.lock:
+            if self.storage_dirty and (self.storage_retry is None or
+                                       dt_util.as_utc(now) >= self.storage_retry):
+                await self.save()
 
     def record(self, s, action, now):
         s.setdefault("events", []).append({"action": action, "at": now.isoformat()})
@@ -338,6 +400,24 @@ class Engine:
         return [{key: event[key] for key in ("start", "end", "summary", "message")
                  if key in event} for event in events]
 
+    def prune_calendar_cache(self, now):
+        """Discard expired data and calendars no longer referenced by tasks."""
+        active = {self.conf(entry).get("trigger_entity") for entry in self.entries.values()
+                  if self.conf(entry)["trigger_type"] == "calendar"}
+        for entity_id, cached in list(self.calendar_cache.items()):
+            age = dt_util.as_utc(now) - dt_util.as_utc(cached[0])
+            if entity_id not in active or not timedelta(0) <= age < timedelta(minutes=30):
+                self.calendar_cache.pop(entity_id, None)
+        for entity_id in self.calendar_failures.keys() - active:
+            self.calendar_failures.pop(entity_id, None)
+        for entity_id in self.calendar_requests.keys() - active:
+            self.calendar_requests[entity_id]["invalidated"] = True
+
+    def invalidate_calendar(self, entity_id):
+        self.calendar_cache.pop(entity_id, None)
+        if request := self.calendar_requests.get(entity_id):
+            request["invalidated"] = True
+
     async def calendar_events(self, entity_id, now, offset_days=0):
         """Return fresh events, or recent cached events for display during failure."""
         max_offset = offset_days
@@ -374,6 +454,10 @@ class Engine:
             return fallback()
         if not failure and cached is not None and age < timedelta(minutes=5) and cached[2] >= end:
             return cached[1]
+        # The shared evaluation lock serializes normal calendar callers.
+        # An event can still invalidate a request while the provider is awaited.
+        request = {"invalidated": False}
+        self.calendar_requests[entity_id] = request
         try:
             async with asyncio.timeout(15):
                 response = await self.hass.services.async_call(
@@ -385,11 +469,20 @@ class Engine:
                 )
             events = self._validated_calendar_events(response, entity_id)
         except ValueError:
+            if request["invalidated"]:
+                return None
             self._calendar_failed(entity_id, now, "invalid calendar response")
             return fallback()
         except Exception:
+            if request["invalidated"]:
+                return None
             self._calendar_failed(entity_id, now, "calendar request failed")
             return fallback()
+        finally:
+            if self.calendar_requests.get(entity_id) is request:
+                self.calendar_requests.pop(entity_id)
+        if request["invalidated"]:
+            return None
         self.calendar_cache[entity_id] = (now, events, end)
         self.calendar_failures.pop(entity_id, None)
         return events
@@ -704,8 +797,10 @@ class Engine:
                 token = s.get("active_token")
                 self._finish(s, now, "completed")
                 s["completed_token"] = token
-            await self.save()
+            saved = await self.save()
             self.notify(entry_id)
+        if saved is False:
+            raise HomeAssistantError("Task updated in memory but history is not saved; automatic retry enabled")
         await self.evaluate(entry)
 
     def find_entry(self, call):
@@ -844,6 +939,8 @@ class Engine:
             return
         self.tick_running = True
         try:
+            self.prune_calendar_cache(now or dt_util.now())
+            await self.retry_storage(now or dt_util.now())
             jobs = [job for entry in list(self.entries.values())
                     if (job := self.request_evaluation(entry)) is not None]
             # A cancelled timer must not cancel event-driven workers it joined.
@@ -940,7 +1037,7 @@ class Engine:
         if any(self.conf(entry)["trigger_type"] == "calendar"
                and self.conf(entry).get("trigger_entity") == entity_id
                for entry in entries):
-            self.calendar_cache.pop(entity_id, None)
+            self.invalidate_calendar(entity_id)
         for entry in entries:
             if entry.entry_id not in self.cyclic_entries:
                 self.request_evaluation(entry)
@@ -997,7 +1094,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     return True
 
 async def _options_updated(hass, entry):
-    await hass.config_entries.async_reload(entry.entry_id)
+    engine = hass.data[DOMAIN]
+    if entry.entry_id not in engine.entries or entry.entry_id in engine.reloading_entries:
+        await hass.config_entries.async_reload(entry.entry_id)
+        return
+    # Config entries are mutable; use the last published name if available,
+    # not the already-updated options, while the entry is temporarily unloaded.
+    name = engine.last_aggregate_names.get(entry.entry_id, engine.aggregate_name(entry))
+    engine.reloading_entries[entry.entry_id] = (entry, name)
+    try:
+        await hass.config_entries.async_reload(entry.entry_id)
+    finally:
+        engine.reloading_entries.pop(entry.entry_id, None)
+        engine.publish_open_tasks()
 
 async def async_unload_entry(hass, entry):
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

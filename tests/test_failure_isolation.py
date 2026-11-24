@@ -10,6 +10,12 @@ from custom_components.household_tasks import Engine
 
 def make_engine():
     engine = Engine.__new__(Engine)
+    engine.storage_dirty = False
+    engine.storage_failed = False
+    engine.storage_retry = None
+    engine.reloading_entries = {}
+    engine.last_aggregate_names = {}
+    engine.calendar_requests = {}
     engine.cyclic_entries = set()
     bad = SimpleNamespace(entry_id="bad")
     good = SimpleNamespace(entry_id="good")
@@ -17,6 +23,7 @@ def make_engine():
     engine.evaluation_errors = set()
     engine.evaluation_jobs = {}
     engine.tick_running = False
+    engine.prune_calendar_cache = Mock()
     engine.hass = SimpleNamespace(async_create_task=lambda coro, **kwargs: asyncio.create_task(coro))
     engine.listeners = [Mock()]
     engine.save = AsyncMock()

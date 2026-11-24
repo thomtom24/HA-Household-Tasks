@@ -13,7 +13,7 @@ def test_history_store_requests_private_file_permissions():
     hass = Mock()
     with patch("custom_components.household_tasks.Store") as store:
         Engine(hass)
-    store.assert_called_once_with(hass, 1, "household_tasks.history", private=True)
+    store.assert_called_once_with(hass, 1, "household_tasks.history", private=True, atomic_writes=True)
 
 
 @pytest.mark.parametrize("title_field", ["summary", "message"])
@@ -45,6 +45,12 @@ def test_projection_preserves_missing_end_and_empty_title():
 def test_routine_error_logs_do_not_include_exception_payload(caplog, failure):
     async def scenario():
         engine = Engine.__new__(Engine)
+        engine.storage_dirty = False
+        engine.storage_failed = False
+        engine.storage_retry = None
+        engine.reloading_entries = {}
+        engine.last_aggregate_names = {}
+        engine.calendar_requests = {}
         engine.cyclic_entries = set()
         entry = SimpleNamespace(entry_id="task")
         engine.entries = {"task": entry}
@@ -68,6 +74,12 @@ def test_routine_error_logs_do_not_include_exception_payload(caplog, failure):
 def test_debug_logging_can_still_show_traceback(caplog):
     async def scenario():
         engine = Engine.__new__(Engine)
+        engine.storage_dirty = False
+        engine.storage_failed = False
+        engine.storage_retry = None
+        engine.reloading_entries = {}
+        engine.last_aggregate_names = {}
+        engine.calendar_requests = {}
         engine.cyclic_entries = set()
         entry = SimpleNamespace(entry_id="task")
         engine.entries = {"task": entry}

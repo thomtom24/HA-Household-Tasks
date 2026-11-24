@@ -21,6 +21,12 @@ BUTTON = "button.renamed_task_completion"
 
 def make_engine():
     engine = Engine.__new__(Engine)
+    engine.storage_dirty = False
+    engine.storage_failed = False
+    engine.storage_retry = None
+    engine.reloading_entries = {}
+    engine.last_aggregate_names = {}
+    engine.calendar_requests = {}
     engine.cyclic_entries = set()
     entry = SimpleNamespace(entry_id=ENTRY_ID, unique_id="test_task", title="Test Task")
     other = SimpleNamespace(entry_id="other", unique_id="other_task", title="Other Task")

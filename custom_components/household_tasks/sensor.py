@@ -1,4 +1,5 @@
 """Task status sensors for Home Assistant."""
+from copy import deepcopy
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
@@ -10,6 +11,7 @@ class TaskStatusSensor(SensorEntity):
 
     def __init__(self, engine, entry):
         self.engine, self.entry = engine, entry
+        self._last_payload = None
         self._attr_unique_id = f"{entry.entry_id}_status"
         self._attr_name = f"{engine.conf(entry).get('friendly_name') or entry.title} status"
 
@@ -23,6 +25,8 @@ class TaskStatusSensor(SensorEntity):
         c = self.engine.conf(self.entry)
         completed_early_today = self.engine.completed_early_today(s, dt_util.now())
         warnings = list(s.get("entity_warnings", []))
+        if self.engine.storage_failed:
+            warnings.append("Task history is not saved to disk. Automatic retry enabled; avoid restarting Home Assistant.")
         if self.entry.entry_id in self.engine.cyclic_entries:
             warnings.append("Circular task dependency detected. Automatic transitions paused; edit the task rules to resolve the loop.")
         if self.entry.entry_id in self.engine.evaluation_errors:
@@ -42,6 +46,7 @@ class TaskStatusSensor(SensorEntity):
         }
 
     async def async_added_to_hass(self):
+        self._last_payload = deepcopy((self.native_value, self.extra_state_attributes))
         self.engine.listeners.append(self._changed)
 
     async def async_will_remove_from_hass(self):
@@ -50,7 +55,10 @@ class TaskStatusSensor(SensorEntity):
 
     def _changed(self, entry_id):
         if entry_id == self.entry.entry_id:
-            self.async_write_ha_state()
+            payload = (self.native_value, self.extra_state_attributes)
+            if payload != self._last_payload:
+                self.async_write_ha_state()
+                self._last_payload = deepcopy(payload)
 
 async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities([TaskStatusSensor(hass.data[DOMAIN], entry)])
