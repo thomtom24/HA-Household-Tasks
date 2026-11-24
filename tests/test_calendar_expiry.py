@@ -21,6 +21,7 @@ def make_event(start=START, end=END):
 def make_engine(rule):
     engine = Engine.__new__(Engine)
     engine.history = {}
+    engine.calendar_failures = {}
     engine.lock = asyncio.Lock()
     engine.save = AsyncMock()
     engine.notify = Mock()
@@ -96,6 +97,12 @@ def test_calendar_end_rules_complete_once(rule, response):
                 engine.calendar_events.return_value = None
             clock.return_value = END
             await engine.evaluate(entry)
+            if response == "unavailable":
+                # An outage cannot verify the stored event end.
+                assert state["open"]
+                assert len(state["events"]) == 1
+                engine.calendar_events.return_value = []
+                await engine.evaluate(entry)
             assert not state["open"]
             assert state["completed_token"] == token
             assert state["events"][-1]["action"] == "auto_completed"
