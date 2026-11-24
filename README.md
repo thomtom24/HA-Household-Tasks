@@ -91,6 +91,16 @@ Matching is case-insensitive and checks whether the event title contains the con
 
 Calendar reminders support offsets from 0 to 365 days. The scheduler searches at least 90 calendar days ahead, extending the search as necessary to cover the configured offset plus 30 days of upcoming reminders. Responses are cached for five minutes and shared across tasks using the same calendar. Each task retains its own search window. Calendar providers must support retrieval across the requested date range; provider-specific limitations may still affect long-offset reminders.
 
+### Calendar provider outages
+
+Calendar responses are normally trusted for five minutes. If the calendar entity or service becomes unavailable, a request fails, or the returned data is malformed, calendar-triggered opening and calendar-end automatic completion pause until a successful refresh. A valid empty calendar response is distinct from an invalid response.
+
+A recent cached response with adequate date coverage may still supply upcoming due dates for display, but is not used for automatic calendar transitions after a failure. Cached responses expire after 30 minutes; calendar entity updates may invalidate them sooner. Outstanding tasks retain their original due date and occurrence history. Manual completion and independent entity-based closing rules remain available.
+
+Failed retrievals are shared across tasks using the same calendar. Retries back off by 1, 2, 4, 8 and then up to 15 minutes. Individual calendar service calls have a 15-second timeout. Successful retrieval clears the warning and resumes normal scheduling. Task status sensors expose calendar failures through their existing `entity_warnings` and `has_entity_warning` attributes.
+
+Tasks that would have opened and ended entirely during an outage are not queued retrospectively. On recovery, the scheduler evaluates the current eligible occurrences. If a previously opened occurrence is absent from a successful response, calendar-end completion retains the existing recorded-end fallback.
+
 ### Completing tasks early
 
 Eligible upcoming completion-relative, weekly, monthly and yearly tasks with manual completion enabled show a **Complete early** button. Completing a task early satisfies its next occurrence without opening or announcing it. Completion-relative tasks restart their interval from the actual completion date; fixed schedules retain their calendar alignment.
