@@ -111,7 +111,7 @@ After early completion, the button shows **Completed today** and remains disable
 
 Each task exposes a status sensor with open or closed state, due dates, opening and completion timestamps, recent history and entity warnings.
 
-Two aggregate sensors are available:
+Two registered aggregate sensors are available. They are managed at integration level, independently of individual tasks, and keep their existing default entity IDs and attributes. Home Assistant's entity registry permits renaming; if an unrelated entity already occupies a default ID, Home Assistant may assign a suffix. Check the actual IDs after upgrading before changing automations:
 
 | Entity | Purpose |
 | --- | --- |
