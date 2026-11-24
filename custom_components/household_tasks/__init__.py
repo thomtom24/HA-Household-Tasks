@@ -212,10 +212,33 @@ class Engine:
         s.setdefault("events", []).append({"action": action, "at": now.isoformat()})
         s["events"] = s["events"][-100:]
 
-    async def calendar_events(self, entity_id, now):
-        """Fetch all calendar events, not just the next entity attribute event."""
+    @staticmethod
+    def calendar_window_end(now, offset_days):
+        """Cover at least 90 days of events and 30 days of upcoming reminders."""
+        # Query through the entire final local calendar day. An event later
+        # that day can produce a reminder due at midnight.
+        horizon = max(90, offset_days + 30)
+        return local_midnight(now) + timedelta(days=horizon + 1)
+
+    async def calendar_events(self, entity_id, now, offset_days=0):
+        """Share a sufficiently wide calendar response across loaded tasks."""
+        max_offset = offset_days
+        for other in self.entries.values():
+            config = self.conf(other)
+            if config["trigger_type"] != "calendar" or config.get("trigger_entity") != entity_id:
+                continue
+            try:
+                other_offset = legacy_calendar_days({**other.data, **other.options})
+            except (ValueError, TypeError, OverflowError):
+                # A malformed sibling task must not block valid calendar tasks.
+                continue
+            if 0 <= other_offset <= 365:
+                max_offset = max(max_offset, other_offset)
+        end = self.calendar_window_end(now, max_offset)
         cached = self.calendar_cache.get(entity_id)
-        if cached and now - cached[0] < timedelta(minutes=5):
+        covers_window = (cached is not None and cached[0] <= now
+                         and cached[2] >= end)
+        if covers_window and now - cached[0] < timedelta(minutes=5):
             return cached[1]
         if not self.hass.services.has_service("calendar", "get_events"):
             return None
@@ -224,27 +247,32 @@ class Engine:
                 "calendar", "get_events",
                 {"entity_id": entity_id,
                  "start_date_time": (now - timedelta(days=3)).isoformat(),
-                 "end_date_time": (now + timedelta(days=90)).isoformat()},
+                 "end_date_time": end.isoformat()},
                 blocking=True, return_response=True,
             )
             events = response.get(entity_id, {}).get("events", [])
-            self.calendar_cache[entity_id] = (now, events)
+            self.calendar_cache[entity_id] = (now, events, end)
             return events
         except Exception:
-            # Do not discard known events because of a transient calendar error.
-            return cached[1] if cached else None
+            # Do not represent a narrower response as covering a longer offset.
+            # Stale-data trust and expiry are addressed separately.
+            return cached[1] if covers_window else None
 
     async def calculate_calendar(self, entry, now):
         c, s = self.conf(entry), self.state(entry)
         entity_id = c.get("trigger_entity", "")
-        events = await self.calendar_events(entity_id, now)
+        offset_days = legacy_calendar_days({**entry.data, **entry.options})
+        if not 0 <= offset_days <= 365:
+            raise ValueError("Calendar reminder offset must be between 0 and 365 days")
+        window_end = self.calendar_window_end(now, offset_days)
+        events = await self.calendar_events(entity_id, now, offset_days)
         if events is None:
             if s.get("open") and not s.get("pending_rebind"):
                 return (parse_dt(s.get("due_at_open")) or parse_dt(s.get("due")),
                         s.get("active_token"), False, parse_dt(s.get("calendar_end")))
             return None, None, False, None
         match = str(c.get("calendar_match", "")).casefold().strip()
-        offset = timedelta(days=legacy_calendar_days({**entry.data, **entry.options}))
+        offset = timedelta(days=offset_days)
         candidates = []
         for event in events:
             title = str(event.get("summary") or event.get("message") or "")
@@ -270,7 +298,7 @@ class Engine:
             return original_due, s.get("active_token"), False, parse_dt(s.get("calendar_end"))
         # Do not reopen a completed occurrence. Select the next matching event.
         for due, token, start, end in candidates:
-            if token == s.get("completed_token") or (end is not None and end <= now):
+            if start >= window_end or token == s.get("completed_token") or (end is not None and end <= now):
                 continue
             return due, token, now >= due, end
         return None, None, False, None
