@@ -1,6 +1,7 @@
 """Persistent task scheduler for Household Tasks."""
 from __future__ import annotations
 import asyncio
+from copy import deepcopy
 from pathlib import Path
 from datetime import datetime, timedelta, time as datetime_time
 from homeassistant.core import HomeAssistant, callback
@@ -246,7 +247,9 @@ class Engine:
                       else value == c["trigger_state"] and value not in (None, "unknown", "unavailable", ""))
             token = "entity:" + str(c.get("trigger_entity"))
             if active:
-                due = now
+                # Keep the current occurrence's due time stable while active,
+                # including after completion or while snoozed.
+                due = parse_dt(s.get("due_at_open")) or parse_dt(s.get("due")) or now
         return due, token, active, end
 
     def close_condition(self, entry, now, calendar_end):
@@ -315,7 +318,7 @@ class Engine:
                 due, token, active, end = await self.calculate_calendar(entry, now)
             else:
                 due, token, active, end = self.calculate(entry, now)
-            old = dict(s)
+            old = deepcopy(s)
             s["completed_early_today"] = self.completed_early_today(s, now)
             s["entity_warnings"] = self.entity_warnings(entry)
             s["due"] = due.isoformat() if due else None
@@ -344,6 +347,9 @@ class Engine:
                 if self.conf(entry)["trigger_type"] not in ("numeric", "state") or not s.get("latched"):
                     s["open"] = True
                     s["last_opened"] = now.isoformat()
+                    if self.conf(entry)["trigger_type"] in ("numeric", "state"):
+                        due = now
+                        s["due"] = now.isoformat()
                     s["due_at_open"] = due.isoformat() if due else None
                     s["active_token"] = token
                     self.record(s, "opened", now)
@@ -355,7 +361,13 @@ class Engine:
                     s["latched"] = False
                     s["completed_token"] = None
             if old != s:
-                await self.save()
+                # Calculated display fields do not warrant a history write.
+                # They are recomputed on setup and every evaluation.
+                transient = {"due", "next_token", "entity_warnings", "completed_early_today"}
+                if ("due" not in old or
+                        {k: v for k, v in old.items() if k not in transient}
+                        != {k: v for k, v in s.items() if k not in transient}):
+                    await self.save()
                 self.notify(entry.entry_id)
 
     def _finish(self, s, now, action):
