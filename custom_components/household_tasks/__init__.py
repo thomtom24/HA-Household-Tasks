@@ -4,6 +4,7 @@ import asyncio
 import logging
 import math
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime, timedelta, time as datetime_time
 import voluptuous as vol
@@ -91,6 +92,14 @@ def compare(value, op, threshold):
     """Keep the existing boolean comparison interface."""
     return numeric_condition(value, op, threshold) is True
 
+@dataclass
+class EvaluationJob:
+    """One coalescing background worker per task entry ID."""
+    entry: ConfigEntry
+    pending: bool = True
+    task: asyncio.Task | None = None
+
+
 class Engine:
     def __init__(self, hass):
         self.hass = hass
@@ -107,6 +116,8 @@ class Engine:
         self.calendar_cache = {}
         self.calendar_failures = {}
         self.evaluation_errors = set()
+        self.evaluation_jobs = {}
+        self.tick_running = False
 
     async def start(self):
         self.history = await self.store.async_load() or {}
@@ -526,6 +537,9 @@ class Engine:
 
     async def evaluate(self, entry):
         async with self.lock:
+            # A queued evaluation may have outlived its original config entry.
+            if self.entries.get(entry.entry_id) is not entry:
+                return
             now = dt_util.now()
             s = self.state(entry)
             old = deepcopy(s)
@@ -547,6 +561,11 @@ class Engine:
                 s.clear()
                 s.update(old)
                 raise
+            if self.entries.get(entry.entry_id) is not entry:
+                # The calendar request may have yielded while the entry unloaded.
+                s.clear()
+                s.update(old)
+                return
             # A carried-over open task keeps its original opening date. Bind
             # it to the new rule only when an actual occurrence becomes active.
             if s.get("open") and s.get("pending_rebind"):
@@ -616,6 +635,8 @@ class Engine:
         if not entry:
             raise ValueError("Unknown task entry")
         async with self.lock:
+            if self.entries.get(entry_id) is not entry:
+                raise ValueError("Task entry changed or unloaded; retry the action")
             s, now = self.state(entry), dt_util.now()
             close_type = self.conf(entry)["close_type"]
             if action in ("complete", "complete_early") and not (close_type == "manual" or close_type.startswith("manual_or_")):
@@ -723,6 +744,8 @@ class Engine:
                 _LOGGER.debug("Household task evaluation traceback", exc_info=True)
                 self._notify_evaluation_warning(entry_id)
         else:
+            if self.entries.get(entry_id) is not entry:
+                return
             if entry_id in self.evaluation_errors:
                 self.evaluation_errors.discard(entry_id)
                 self._notify_evaluation_warning(entry_id)
@@ -736,9 +759,60 @@ class Engine:
                 _LOGGER.error("Unable to publish evaluation warning for task %s", entry_id)
                 _LOGGER.debug("Household task warning publication traceback", exc_info=True)
 
+    @callback
+    def request_evaluation(self, entry):
+        """Coalesce events into one running/queued worker and a dirty flag."""
+        entry_id = entry.entry_id
+        if self.entries.get(entry_id) is not entry:
+            return None
+        job = self.evaluation_jobs.get(entry_id)
+        if job is not None and job.task is not None and not job.task.done():
+            # If an entry was replaced, the next pass uses the replacement.
+            job.entry = entry
+            job.pending = True
+            return job.task
+        job = EvaluationJob(entry)
+        self.evaluation_jobs[entry_id] = job
+        job.task = self.hass.async_create_task(
+            self._drain_evaluations(entry_id, job),
+            name=f"household_tasks evaluate {entry_id}", eager_start=False)
+        # Also clean up a task cancelled before its coroutine starts.
+        job.task.add_done_callback(lambda _: self._forget_evaluation(entry_id, job))
+        return job.task
+
+    @callback
+    def _forget_evaluation(self, entry_id, job):
+        if self.evaluation_jobs.get(entry_id) is job:
+            self.evaluation_jobs.pop(entry_id)
+
+    async def _drain_evaluations(self, entry_id, job):
+        try:
+            while job.pending:
+                job.pending = False
+                entry = job.entry
+                if self.entries.get(entry_id) is not entry:
+                    return
+                await self._evaluate_background(entry)
+                if job.pending:
+                    # Yield to other tasks even when evaluation has no I/O.
+                    await asyncio.sleep(0)
+        finally:
+            self._forget_evaluation(entry_id, job)
+
     async def _tick(self, now):
-        for entry in list(self.entries.values()):
-            await self._evaluate_background(entry)
+        """Schedule one periodic sweep without overlapping timer sweeps."""
+        if self.tick_running:
+            return
+        self.tick_running = True
+        try:
+            jobs = [job for entry in list(self.entries.values())
+                    if (job := self.request_evaluation(entry)) is not None]
+            # A cancelled timer must not cancel event-driven workers it joined.
+            if jobs:
+                await asyncio.gather(*(asyncio.shield(job) for job in jobs),
+                                     return_exceptions=True)
+        finally:
+            self.tick_running = False
 
     @callback
     def _registry_event(self, event):
@@ -824,7 +898,7 @@ class Engine:
                for entry in entries):
             self.calendar_cache.pop(entity_id, None)
         for entry in entries:
-            self.hass.async_create_task(self._evaluate_background(entry))
+            self.request_evaluation(entry)
 
 async def async_setup(hass: HomeAssistant, config):
     await hass.http.async_register_static_paths([

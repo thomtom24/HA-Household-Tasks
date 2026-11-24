@@ -14,6 +14,9 @@ def make_engine():
     good = SimpleNamespace(entry_id="good")
     engine.entries = {"bad": bad, "good": good}
     engine.evaluation_errors = set()
+    engine.evaluation_jobs = {}
+    engine.tick_running = False
+    engine.hass = SimpleNamespace(async_create_task=lambda coro, **kwargs: asyncio.create_task(coro))
     engine.listeners = [Mock()]
     engine.save = AsyncMock()
     return engine, bad, good

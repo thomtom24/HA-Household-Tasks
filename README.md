@@ -163,7 +163,7 @@ Home Assistant internal calls without a user ID, such as scheduled automations, 
 - The dashboard resource must be added manually once.
 - Weekly recurrence supports one weekday per task.
 - Monthly recurrence is configured as every month in the current editor.
-- The scheduler subscribes only to entities used by active opening and closing rules, sharing one subscription per entity. Configuration changes and unloads refresh these subscriptions; the one-minute evaluation timer remains as a fallback and for scheduled tasks.
+- The scheduler subscribes only to entities used by active opening and closing rules, sharing one subscription per entity. Configuration changes and unloads refresh these subscriptions; the one-minute evaluation timer remains as a fallback and for scheduled tasks. Background evaluations are coalesced per task: bursts of changes during a running evaluation request a follow-up pass using the current entity states, not a separate queued job for every event. This is a state-based scheduler, not a recorder of brief intermediate state transitions. Shared history writes remain serialized.
 - When Home Assistant reports an entity ID rename, the integration attempts to update associated task references automatically.
 - Missing or unavailable dependencies are exposed through `entity_warnings` and `has_entity_warning` on task status sensors. Check these attributes and Home Assistant logs if a task is not behaving as expected.
 - Calendar retrieval, task editing, sensor recovery and timezone edge cases require further testing.
