@@ -17,6 +17,8 @@ A custom Home Assistant integration for tracking recurring household tasks, main
 
 ## Installation
 
+Minimum Home Assistant version: **2025.12.0**. Older releases are not supported by this version. Automated Python regression tests use 2025.12.0; newer versions require compatibility verification.
+
 1. In HACS, add `https://github.com/thomtom24/HA-Household-Tasks` as a custom **Integration** repository.
 2. Download the integration and restart Home Assistant.
 3. Go to **Settings → Devices & services → Add integration → Household Tasks**.
@@ -39,7 +41,7 @@ type: custom:household-tasks-card
 title: Household Tasks
 ```
 
-If you previously registered `/local/household-tasks-card.js`, remove that resource to avoid duplicate card registration. Refresh your browser after installation or upgrades. The bundled card is served by the integration; you only need to register its resource once.
+If you previously registered `/local/household-tasks-card.js`, remove that resource and use the bundled URL above. A legacy copy already installed in your www directory is not automatically replaced by HACS. The repository's legacy file now only imports the bundled card. Refresh your browser after installation or upgrades. The bundled card is served by the integration; you only need to register its resource once.
 
 ## Configuring tasks
 
@@ -203,6 +205,10 @@ To regenerate branding PNGs, run **Generate Home Assistant brand assets** under 
 This project was produced using ChatGPT in response to human prompts and direction. It was not created solely by a human developer. The project owner provides requirements, reviews changes and participates in testing, while ChatGPT generates and assists with implementation, documentation and automated tests.
 
 AI-generated code may contain errors, security issues or unexpected behaviour. The integration is provided as-is, without guarantees of reliability or suitability for any particular purpose. Please review and test it in your own environment before relying on it.
+
+## Licence and contributing
+
+Released under the [MIT licence](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md) for development and testing guidance. HACS and hassfest checks run in GitHub Actions. The card supports renamed task sensors and uses Home Assistant's configured timezone for calendar dates. Card text remains English; full multilingual frontend support is not included in this release.
 
 ## About and support
 

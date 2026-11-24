@@ -11,7 +11,7 @@ import voluptuous as vol
 from homeassistant.auth.permissions.const import POLICY_CONTROL
 from homeassistant.core import HomeAssistant, callback, CoreState
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError, Unauthorized, UnknownUser
-from homeassistant.helpers import discovery, entity_registry as er
+from homeassistant.helpers import config_validation as cv, discovery, entity_registry as er
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.helpers.entity_registry import EVENT_ENTITY_REGISTRY_UPDATED
 from homeassistant.config_entries import ConfigEntry
@@ -25,6 +25,7 @@ from .const import DOMAIN, PLATFORMS, DEFAULTS
 from .dependencies import active_entity_ids, cyclic_entries
 
 _LOGGER = logging.getLogger(__name__)
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 def _nonblank_selector(value):
