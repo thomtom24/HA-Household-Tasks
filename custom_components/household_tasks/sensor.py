@@ -21,6 +21,9 @@ class TaskStatusSensor(SensorEntity):
         s = self.engine.state(self.entry)
         c = self.engine.conf(self.entry)
         completed_early_today = self.engine.completed_early_today(s, dt_util.now())
+        warnings = list(s.get("entity_warnings", []))
+        if self.entry.entry_id in self.engine.evaluation_errors:
+            warnings.append("Task evaluation failed; check Home Assistant logs. Automatic retry enabled.")
         return {
             "completed_early_today": completed_early_today,
             "task_entry_id": self.entry.entry_id,
@@ -31,8 +34,8 @@ class TaskStatusSensor(SensorEntity):
             "manual_completion_allowed": c.get("close_type", "manual") == "manual" or c.get("close_type", "").startswith("manual_or_"),
             "due": s.get("due"), "due_at_open": s.get("due_at_open"), "last_completed": s.get("last_completed"),
             "last_opened": s.get("last_opened"), "history": s.get("events", [])[-20:],
-            "entity_warnings": s.get("entity_warnings", []),
-            "has_entity_warning": bool(s.get("entity_warnings")),
+            "entity_warnings": warnings,
+            "has_entity_warning": bool(warnings),
         }
 
     async def async_added_to_hass(self):
