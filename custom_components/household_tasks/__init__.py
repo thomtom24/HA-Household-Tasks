@@ -1,6 +1,7 @@
 """Persistent task scheduler for Household Tasks."""
 from __future__ import annotations
 import asyncio
+import logging
 from copy import deepcopy
 from pathlib import Path
 from datetime import datetime, timedelta, time as datetime_time
@@ -15,6 +16,8 @@ from homeassistant.util import dt as dt_util
 from .scheduling import fixed_schedule
 from .date_rules import completion_due_date, offset_due_date, legacy_calendar_days
 from .const import DOMAIN, PLATFORMS, DEFAULTS
+
+_LOGGER = logging.getLogger(__name__)
 
 def parse_dt(value):
     if not value:
@@ -57,6 +60,7 @@ class Engine:
         self.unsub_states = None
         self.unsub_registry = None
         self.calendar_cache = {}
+        self.evaluation_errors = set()
 
     async def start(self):
         self.history = await self.store.async_load() or {}
@@ -453,9 +457,38 @@ class Engine:
     async def _service_snooze(self, call):
         await self.act(self.find_entry(call), "snooze", int(call.data.get("days", 1)))
 
+    async def _evaluate_background(self, entry):
+        """Isolate background evaluation failures and retry on future ticks."""
+        entry_id = entry.entry_id
+        if self.entries.get(entry_id) is not entry:
+            return
+        try:
+            await self.evaluate(entry)
+        except Exception:
+            # Cancellation is deliberately not caught. Keep warnings transient
+            # and log the traceback only on transition into a failed state.
+            if self.entries.get(entry_id) is not entry:
+                return
+            if entry_id not in self.evaluation_errors:
+                self.evaluation_errors.add(entry_id)
+                _LOGGER.exception("Unable to evaluate household task %s; will retry", entry_id)
+                self._notify_evaluation_warning(entry_id)
+        else:
+            if entry_id in self.evaluation_errors:
+                self.evaluation_errors.discard(entry_id)
+                self._notify_evaluation_warning(entry_id)
+
+    def _notify_evaluation_warning(self, entry_id):
+        """Refresh task warnings without writing history or aggregate states."""
+        for listener in list(self.listeners):
+            try:
+                listener(entry_id)
+            except Exception:
+                _LOGGER.exception("Unable to publish evaluation warning for task %s", entry_id)
+
     async def _tick(self, now):
         for entry in list(self.entries.values()):
-            await self.evaluate(entry)
+            await self._evaluate_background(entry)
 
     @callback
     def _registry_event(self, event):
@@ -491,7 +524,7 @@ class Engine:
             if entity_id in (c.get("trigger_entity"), c.get("close_entity")):
                 if c.get("trigger_type") == "calendar":
                     self.calendar_cache.pop(entity_id, None)
-                self.hass.async_create_task(self.evaluate(entry))
+                self.hass.async_create_task(self._evaluate_background(entry))
 
 async def async_setup(hass: HomeAssistant, config):
     await hass.http.async_register_static_paths([
@@ -523,6 +556,7 @@ async def async_unload_entry(hass, entry):
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
         hass.data[DOMAIN].entries.pop(entry.entry_id, None)
+        hass.data[DOMAIN].evaluation_errors.discard(entry.entry_id)
         hass.data[DOMAIN].publish_open_tasks()
     return ok
 
