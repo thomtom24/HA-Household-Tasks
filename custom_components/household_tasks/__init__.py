@@ -10,13 +10,14 @@ import voluptuous as vol
 from homeassistant.auth.permissions.const import POLICY_CONTROL
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError, Unauthorized, UnknownUser
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import discovery, entity_registry as er
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.helpers.entity_registry import EVENT_ENTITY_REGISTRY_UPDATED
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.setup import async_when_setup
 from homeassistant.util import dt as dt_util
 from .scheduling import fixed_schedule
 from .date_rules import completion_due_date, offset_due_date, legacy_calendar_days
@@ -98,6 +99,7 @@ class Engine:
         self.history = {}
         self.entries = {}
         self.listeners = []
+        self.aggregate_listeners = []
         self.lock = asyncio.Lock()
         self.unsub_timer = None
         self.unsub_states = None
@@ -116,7 +118,6 @@ class Engine:
                 DOMAIN, name, getattr(self, "_service_" + name),
                 schema=COMPLETION_SERVICE_SCHEMA,
             )
-        self.publish_open_tasks()
 
     def state(self, entry):
         return self.history.setdefault(entry.entry_id, {
@@ -184,25 +185,22 @@ class Engine:
             state["schedule_anchor"] = local_midnight(now).isoformat()
         return True
 
-    def publish_open_tasks(self):
+    def aggregate_snapshot(self):
+        """Return the existing aggregate sensor states and attributes."""
+        open_entries = [e for e in self.entries.values() if self.state(e).get("open")]
         names = sorted((self.conf(e).get("friendly_name") or e.title
-                        for e in self.entries.values()
-                        if self.state(e).get("open")), key=str.casefold)
+                        for e in open_entries), key=str.casefold)
         if not names:
             announcement = "There are no outstanding household tasks."
         elif len(names) == 1:
             announcement = "One household task is outstanding: " + names[0] + "."
         else:
             announcement = f"{len(names)} household tasks are outstanding: " + ", ".join(names[:-1]) + ", and " + names[-1] + "."
-        self.hass.states.async_set("sensor.household_tasks_open_names", len(names), {
-            "friendly_name": "Household Tasks Open List",
-            "icon": "mdi:format-list-checks",
-            "names": names, "tasks": names, "announcement": announcement, "count": len(names)
-        })
+        open_attributes = {
+            "names": names, "tasks": list(names), "announcement": announcement, "count": len(names)
+        }
 
-        # The newest outstanding task is selected by its persisted opening time,
-        # not by its name or the order in which config entries were loaded.
-        open_entries = [e for e in self.entries.values() if self.state(e).get("open")]
+        # Select the newest outstanding occurrence using the existing ordering.
         latest = max(
             open_entries,
             key=lambda e: (parse_dt(self.state(e).get("last_opened")) or
@@ -212,24 +210,30 @@ class Engine:
         )
         if latest is None:
             latest_name = "none"
-            latest_attributes = {
-                "friendly_name": "Household Tasks Latest Open",
-                "icon": "mdi:clipboard-text-clock-outline",
-                "task_name": None,
-                "opened_at": None, "open_count": 0,
-            }
+            latest_attributes = {"task_name": None, "opened_at": None, "open_count": 0}
         else:
             latest_name = self.conf(latest).get("friendly_name") or latest.title
             latest_attributes = {
-                "friendly_name": "Household Tasks Latest Open",
-                "icon": "mdi:clipboard-text-clock-outline",
                 "task_name": latest_name,
                 "opened_at": self.state(latest).get("last_opened"),
                 "open_count": len(open_entries),
             }
-        self.hass.states.async_set(
-            "sensor.household_tasks_latest_open", latest_name, latest_attributes
-        )
+        return {
+            "open_names": (len(names), open_attributes),
+            "latest_open": (latest_name, latest_attributes),
+        }
+
+    def publish_open_tasks(self):
+        """Notify registered aggregate entities, never write raw states."""
+        if not self.aggregate_listeners:
+            return
+        snapshot = self.aggregate_snapshot()
+        for listener in list(self.aggregate_listeners):
+            try:
+                listener(snapshot)
+            except Exception:
+                _LOGGER.error("Unable to update a household task aggregate sensor")
+                _LOGGER.debug("Aggregate sensor update traceback", exc_info=True)
 
     def notify(self, entry_id):
         self.publish_open_tasks()
@@ -801,6 +805,15 @@ async def async_setup(hass: HomeAssistant, config):
     engine = Engine(hass)
     hass.data[DOMAIN] = engine
     await engine.start()
+
+    async def load_aggregates(hass, _component):
+        # Load a separate domain-level sensor platform only after this
+        # integration's initial config entries have completed setup. This
+        # avoids a circular setup dependency and partial startup snapshots.
+        await discovery.async_load_platform(
+            hass, "sensor", DOMAIN, {"aggregate_sensors": True}, config)
+
+    async_when_setup(hass, DOMAIN, load_aggregates)
     return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
