@@ -89,7 +89,7 @@ To track multiple collection types in a single calendar, create separate tasks u
 
 Matching is case-insensitive and checks whether the event title contains the configured text. Set **Days before event** to 1 to open the task at midnight on the preceding day. Event-end completion uses the actual event end time.
 
-The scheduler currently retrieves calendar events up to 90 days ahead and caches responses for five minutes. Longer advance offsets may not open on time. Test the behaviour with your calendar provider.
+Calendar reminders support offsets from 0 to 365 days. The scheduler searches at least 90 calendar days ahead, extending the search as necessary to cover the configured offset plus 30 days of upcoming reminders. Responses are cached for five minutes and shared across tasks using the same calendar. Each task retains its own search window. Calendar providers must support retrieval across the requested date range; provider-specific limitations may still affect long-offset reminders.
 
 ### Completing tasks early
 
