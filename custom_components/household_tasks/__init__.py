@@ -84,7 +84,7 @@ class Engine:
         self.unsub_timer = async_track_time_interval(self.hass, self._tick, timedelta(minutes=1))
         self.unsub_states = self.hass.bus.async_listen(EVENT_STATE_CHANGED, self._state_event)
         self.unsub_registry = self.hass.bus.async_listen(EVENT_ENTITY_REGISTRY_UPDATED, self._registry_event)
-        for name in ("complete", "complete_early", "reopen", "skip", "snooze"):
+        for name in ("complete", "complete_early"):
             self.hass.services.async_register(DOMAIN, name, getattr(self, "_service_" + name))
         self.publish_open_tasks()
 
@@ -93,7 +93,7 @@ class Engine:
             "created": dt_util.now().isoformat(), "open": False,
             "last_completed": None, "last_opened": None,
             "completed_token": None, "active_token": None,
-            "snooze_until": None, "events": []
+            "events": []
         })
 
     def conf(self, entry):
@@ -418,7 +418,7 @@ class Engine:
                 due = parse_dt(s.get("due"))
             elif active:
                 # Keep the current occurrence's due time stable while active,
-                # including after completion or while snoozed.
+                # including after completion.
                 due = parse_dt(s.get("due_at_open")) or parse_dt(s.get("due")) or now
         return due, token, active, end
 
@@ -493,6 +493,12 @@ class Engine:
             now = dt_util.now()
             s = self.state(entry)
             old = deepcopy(s)
+            # One-time cleanup of legacy snooze state. Restore the original
+            # outstanding occurrence without fabricating an opening or completion.
+            legacy_snooze = s.pop("snooze_until", None)
+            if legacy_snooze:
+                s["open"] = True
+                s["carried_open"] = True
             try:
                 rule_changed = self.reconcile_opening_rule(entry, s, now)
                 if self.conf(entry)["trigger_type"] == "calendar":
@@ -523,17 +529,11 @@ class Engine:
             if self.conf(entry)["trigger_type"] == "calendar" and s.get("open") and end is not None:
                 s["calendar_end"] = end.isoformat()
             s["next_token"] = token
-            if s.get("snooze_until") and (parse_dt(s["snooze_until"]) or now) <= now:
-                s["snooze_until"] = None
-                if self.conf(entry)["trigger_type"] in ("numeric", "state"):
-                    s["latched"] = False
-                    s["completed_token"] = None
-            snoozed = bool(s.get("snooze_until"))
-            if s.get("open") and not rule_changed and self.close_condition(entry, now, end):
+            if s.get("open") and not rule_changed and not legacy_snooze and self.close_condition(entry, now, end):
                 self._finish(s, now, "auto_completed")
                 if s.get("active_token"):
                     s["completed_token"] = s["active_token"]
-            if not s.get("open") and active and not snoozed and token != s.get("completed_token"):
+            if not s.get("open") and active and token != s.get("completed_token"):
                 if self.conf(entry)["trigger_type"] not in ("numeric", "state") or not s.get("latched"):
                     s["open"] = True
                     s["last_opened"] = now.isoformat()
@@ -550,7 +550,7 @@ class Engine:
                     self.record(s, "opened", now)
                     if self.conf(entry)["trigger_type"] in ("numeric", "state"):
                         s["latched"] = True
-            if self.conf(entry)["trigger_type"] == "calendar" and not s.get("open") and not snoozed:
+            if self.conf(entry)["trigger_type"] == "calendar" and not s.get("open"):
                 if s.get("calendar_end") is not None:
                     s["calendar_end"] = None
             if active is False and self.conf(entry)["trigger_type"] in ("numeric", "state"):
@@ -571,10 +571,11 @@ class Engine:
         s.pop("pending_rebind", None)
         s.pop("carried_open", None)
         s["last_completed"] = now.isoformat()
-        s["snooze_until"] = None
         self.record(s, action, now)
 
-    async def act(self, entry_id, action, days=1):
+    async def act(self, entry_id, action):
+        if action not in ("complete", "complete_early"):
+            raise ValueError("Unsupported task action")
         entry = self.entries.get(entry_id)
         if not entry:
             raise ValueError("Unknown task entry")
@@ -601,27 +602,12 @@ class Engine:
                 s["completed_token"] = token
                 s["next_token"] = token
                 s["completed_early_today"] = True
-            elif action in ("complete", "skip"):
+            elif action == "complete":
                 if not s.get("open"):
                     return
                 token = s.get("active_token")
-                self._finish(s, now, "completed" if action == "complete" else "skipped")
+                self._finish(s, now, "completed")
                 s["completed_token"] = token
-            elif action == "reopen":
-                s["open"] = True
-                s["completed_token"] = None
-                s["latched"] = True
-                s["last_opened"] = now.isoformat()
-                s["due_at_open"] = s.get("due")
-                self.record(s, "reopened", now)
-            elif action == "snooze":
-                if not s.get("open"):
-                    return
-                if days < 1:
-                    raise ValueError("Snooze days must be positive")
-                s["open"] = False
-                s["snooze_until"] = (now + timedelta(days=days)).isoformat()
-                self.record(s, "snoozed", now)
             await self.save()
             self.notify(entry_id)
         await self.evaluate(entry)
@@ -641,15 +627,6 @@ class Engine:
 
     async def _service_complete_early(self, call):
         await self.act(self.find_entry(call), "complete_early")
-
-    async def _service_reopen(self, call):
-        await self.act(self.find_entry(call), "reopen")
-
-    async def _service_skip(self, call):
-        await self.act(self.find_entry(call), "skip")
-
-    async def _service_snooze(self, call):
-        await self.act(self.find_entry(call), "snooze", int(call.data.get("days", 1)))
 
     async def _evaluate_background(self, entry):
         """Isolate background evaluation failures and retry on future ticks."""

@@ -70,7 +70,7 @@ Editing a task's opening rule recalculates its schedule without deleting complet
 
 An outstanding task retains its original opening timestamp and due date. When the new opening rule becomes active, the existing task is associated with that occurrence rather than opening a duplicate. If the new rule is not active yet, the outstanding task remains open until completed or its applicable closing rule is met. An opening-rule edit does not itself automatically complete an outstanding task during that evaluation; subsequent evaluations apply the configured closing rules. A closing-only edit applies its new closing condition without resetting the opening rule.
 
-Home Assistant entity-registry renames are treated as the same source rather than a newly configured trigger. A closed task may open again after a genuine opening-rule change if the new condition is already met. Existing snooze deadlines are retained; wider skip, snooze and reopen semantics are still under review.
+Home Assistant entity-registry renames are treated as the same source rather than a newly configured trigger. A closed task may open again after a genuine opening-rule change if the new condition is already met.
 
 ### Closing conditions
 
@@ -132,7 +132,7 @@ Retrieve the list of outstanding task names:
 
 A change to the latest-open sensor does not necessarily mean a new task opened: it may also mean the newest task was completed. Consider the `open_count` and `opened_at` attributes when building notifications.
 
-The integration also registers backend actions for completion, early completion, reopening, skipping and snoozing. Not all of these actions are exposed in the dashboard, and some lifecycle edge cases remain under development.
+The integration registers backend actions for completion and early completion. The unfinished skip, snooze and reopen actions have been removed. Previously snoozed outstanding tasks are restored on evaluation after upgrade; existing historical records are retained.
 
 ## Troubleshooting and limitations
 
