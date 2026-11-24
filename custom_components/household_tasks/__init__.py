@@ -406,11 +406,18 @@ class Engine:
             now = dt_util.now()
             s = self.state(entry)
             old = deepcopy(s)
-            rule_changed = self.reconcile_opening_rule(entry, s, now)
-            if self.conf(entry)["trigger_type"] == "calendar":
-                due, token, active, end = await self.calculate_calendar(entry, now)
-            else:
-                due, token, active, end = self.calculate(entry, now)
+            try:
+                rule_changed = self.reconcile_opening_rule(entry, s, now)
+                if self.conf(entry)["trigger_type"] == "calendar":
+                    due, token, active, end = await self.calculate_calendar(entry, now)
+                else:
+                    due, token, active, end = self.calculate(entry, now)
+            except (Exception, asyncio.CancelledError):
+                # Retry the configuration reconciliation on the next evaluation
+                # if the new rule could not be calculated.
+                s.clear()
+                s.update(old)
+                raise
             # A carried-over open task keeps its original opening date. Bind
             # it to the new rule only when an actual occurrence becomes active.
             if s.get("open") and s.get("pending_rebind"):
