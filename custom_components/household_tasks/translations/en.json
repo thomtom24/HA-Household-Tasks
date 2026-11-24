@@ -51,6 +51,15 @@
           "close_threshold": "Closing threshold",
           "close_operator": "Comparison"
         }
+      },
+      "user": {
+        "title": "Task details",
+        "data": {
+          "name": "Internal name",
+          "friendly_name": "Friendly name",
+          "category": "Category",
+          "area_id": "Area (optional)"
+        }
       }
     },
     "error": {
