@@ -168,7 +168,26 @@ Home Assistant internal calls without a user ID, such as scheduled automations, 
 - Calendar retrieval, task editing, sensor recovery and timezone edge cases require further testing.
 - Automated Python tests run on GitHub Actions, but passing tests do not establish full runtime compatibility across Home Assistant versions.
 
-Task configuration and history are stored locally within Home Assistant. The integration does not intentionally send task data to external services.
+## Privacy and data handling
+
+Household Tasks processes task data inside Home Assistant. It has no integration-level telemetry, analytics or external network client. It uses Home Assistant's calendar service to retrieve events; the calendar provider may independently communicate with external services.
+
+| Data | Location and retention |
+| --- | --- |
+| Task names, categories, areas, entity references and rule settings | Home Assistant config entries, until the entry is removed. |
+| Task lifecycle timestamps, occurrence identifiers, rule signatures and completion records | `.storage/household_tasks.history`; up to the latest 100 lifecycle events per task when new events are recorded. Calendar occurrence identifiers include event titles and start times, and rule signatures may include calendar filters or expected entity states. |
+| Calendar results | In-memory cache containing event start/end and summary/message only. Descriptions, locations, attendees and other provider metadata are not retained by the integration's cache. Fresh cache is reused for up to five minutes; during failures a cache may be consulted for display for less than 30 minutes. Expired entries are discarded when that calendar is next evaluated; an unused calendar's cache may remain in memory until restart. |
+| Status and aggregate sensors | Task names, due dates, opening/completion times, recent history (up to 20 events), warnings and announcement text are exposed as Home Assistant entity states/attributes. |
+
+The history store requests Home Assistant's private-file mode on writes. It is not encrypted by the integration, and this does not protect data from administrators, privileged add-ons or backups. Existing file permissions depend on the platform and when the file is next written.
+
+Task deletion removes the task's integration history and saves the remaining history. Home Assistant Recorder, backups, logs and other automations may retain copies independently. Deleting a task does not erase those copies. Use Home Assistant's own retention and purge controls where appropriate.
+
+Routine background evaluation and warning-publication errors log a task entry identifier without the exception payload. Detailed tracebacks are available with debug logging and may contain private information. Other Home Assistant components and service calls may generate their own logs.
+
+Entity visibility is governed by Home Assistant. The card is not a separate privacy boundary. Automations that send task names or announcements to voice assistants, TVs, notifications or external services may disclose those values outside Home Assistant. Consider using generic task names for sensitive activities, restricting access to backups and logs, and redacting calendar titles, entity IDs and task details before sharing support information.
+
+The integration does not automatically change Recorder settings, purge backups or migrate existing occurrence identifiers. Existing automations and task scheduling identities are preserved.
 
 For bug reports or feature requests, use [GitHub Issues](https://github.com/thomtom24/HA-Household-Tasks/issues). Release-specific changes are available through [GitHub Releases](https://github.com/thomtom24/HA-Household-Tasks/releases) and repository history.
 
