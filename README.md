@@ -134,6 +134,12 @@ A change to the latest-open sensor does not necessarily mean a new task opened: 
 
 The integration registers backend actions for completion and early completion. The unfinished skip, snooze and reopen actions have been removed. Previously snoozed outstanding tasks are restored on evaluation after upgrade; existing historical records are retained.
 
+### Completion action permissions
+
+The custom `household_tasks.complete` and `household_tasks.complete_early` actions respect Home Assistant user permissions. Active administrators can complete eligible tasks; other authenticated users must have control permission on the selected task's registered completion button. A missing or disabled completion button prevents non-administrators from using the custom actions. Renaming a button does not change the identity used for permission checks.
+
+Home Assistant internal calls without a user ID, such as scheduled automations, remain supported. The standard `button.press` action uses Home Assistant's built-in entity permission checks. Task-specific completion rules still apply to both routes. These checks do not restrict visibility of task information; entity visibility and access are managed through Home Assistant.
+
 ## Troubleshooting and limitations
 
 - The dashboard resource must be added manually once.
