@@ -212,6 +212,7 @@ def test_registry_rename_preserves_completed_numeric_latch():
         def update_entry(target, options):
             target.options = options
         engine.hass.config_entries = SimpleNamespace(async_update_entry=Mock(side_effect=update_entry))
+        engine.refresh_entity_subscriptions = Mock()
         with patch("custom_components.household_tasks.dt_util.now", return_value=NOW):
             await engine.evaluate(entry)
             await engine.act("task", "complete")
@@ -219,6 +220,7 @@ def test_registry_rename_preserves_completed_numeric_latch():
             history = deepcopy(state["events"])
             sources["sensor.renamed"] = sources.pop("sensor.one")
             await engine._apply_entity_rename("sensor.one", "sensor.renamed")
+            engine.refresh_entity_subscriptions.assert_called_once()
             await engine.evaluate(entry)
             assert not state["open"] and state["latched"]
             assert state["completed_token"] == "entity:sensor.renamed"
