@@ -34,6 +34,8 @@ def make_engine():
         ),
     )
     engine.hass.data = {DOMAIN: engine}
+    # Routing tests isolate the dispatcher; coalescing has dedicated tests.
+    engine.request_evaluation = Mock(side_effect=lambda entry: enqueue(engine._evaluate_background(entry)))
     return engine, jobs
 
 

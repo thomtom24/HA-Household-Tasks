@@ -23,6 +23,7 @@ def test_active_trigger_does_not_rewrite_history(kind, reading, inactive):
         source = SimpleNamespace(state=reading)
         engine.hass = SimpleNamespace(states=SimpleNamespace(get=lambda _: source))
         entry = SimpleNamespace(entry_id="task", data={}, options={})
+        engine.entries = {"task": entry}
         engine.conf = lambda _: {
             "trigger_type": kind, "trigger_entity": "sensor.source",
             "operator": "below", "threshold": 1.0, "trigger_state": "on",
@@ -74,6 +75,7 @@ def test_new_inactive_task_persists_creation_baseline():
         engine.notify = Mock()
         engine.hass = SimpleNamespace(states=SimpleNamespace(get=lambda _: None))
         entry = SimpleNamespace(entry_id="task", data={}, options={})
+        engine.entries = {"task": entry}
         engine.conf = lambda _: {
             "trigger_type": "completion", "interval_days": 7,
             "close_type": "manual",

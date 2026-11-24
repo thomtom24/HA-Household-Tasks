@@ -28,6 +28,7 @@ def make_engine(close_type="manual"):
     engine.hass = SimpleNamespace(states=SimpleNamespace(
         get=lambda _: source if source.state is not None else None))
     entry = SimpleNamespace(entry_id="task")
+    engine.entries = {"task": entry}
     config = {
         "trigger_type": "numeric", "trigger_entity": "sensor.source",
         "operator": "below", "threshold": 1.0, "close_type": close_type,
