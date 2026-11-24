@@ -5,6 +5,10 @@ on:
     paths:
       - branding/icon.svg
       - .github/workflows/brand-assets.yml
+  pull_request:
+    paths:
+      - branding/icon.svg
+      - .github/workflows/brand-assets.yml
   workflow_dispatch:
 permissions:
   contents: read
