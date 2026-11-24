@@ -6,9 +6,10 @@ import math
 from copy import deepcopy
 from pathlib import Path
 from datetime import datetime, timedelta, time as datetime_time
+import voluptuous as vol
 from homeassistant.auth.permissions.const import POLICY_CONTROL
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import Unauthorized, UnknownUser
+from homeassistant.exceptions import ServiceValidationError, Unauthorized, UnknownUser
 from homeassistant.helpers import entity_registry as er
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.const import EVENT_STATE_CHANGED
@@ -22,6 +23,29 @@ from .date_rules import completion_due_date, offset_due_date, legacy_calendar_da
 from .const import DOMAIN, PLATFORMS, DEFAULTS
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _nonblank_selector(value):
+    """Validate an identifier without coercing or rewriting it."""
+    if not isinstance(value, str) or not value.strip():
+        raise vol.Invalid("Task selector must be a non-blank string")
+    return value
+
+
+def _require_task_selector(data):
+    """Require exactly one unambiguous selector field."""
+    if ("entry_id" in data) == ("task" in data):
+        raise vol.Invalid("Specify exactly one of entry_id or task")
+    return data
+
+
+COMPLETION_SERVICE_SCHEMA = vol.Schema(vol.All(
+    vol.Schema({
+        vol.Optional("entry_id"): _nonblank_selector,
+        vol.Optional("task"): _nonblank_selector,
+    }, extra=vol.PREVENT_EXTRA),
+    _require_task_selector,
+))
 
 def parse_dt(value):
     if not value:
@@ -88,7 +112,10 @@ class Engine:
         self.unsub_states = self.hass.bus.async_listen(EVENT_STATE_CHANGED, self._state_event)
         self.unsub_registry = self.hass.bus.async_listen(EVENT_ENTITY_REGISTRY_UPDATED, self._registry_event)
         for name in ("complete", "complete_early"):
-            self.hass.services.async_register(DOMAIN, name, getattr(self, "_service_" + name))
+            self.hass.services.async_register(
+                DOMAIN, name, getattr(self, "_service_" + name),
+                schema=COMPLETION_SERVICE_SCHEMA,
+            )
         self.publish_open_tasks()
 
     def state(self, entry):
@@ -616,14 +643,26 @@ class Engine:
         await self.evaluate(entry)
 
     def find_entry(self, call):
-        entry_id = call.data.get("entry_id")
-        if entry_id in self.entries:
-            return entry_id
-        task = call.data.get("task")
-        for entry in self.entries.values():
-            if entry.unique_id == task or entry.title == task:
-                return entry.entry_id
-        raise ValueError("Specify a valid entry_id or task name")
+        """Resolve a validated selector to exactly one loaded task."""
+        # Validate direct handler calls too, including internal integrations.
+        try:
+            data = COMPLETION_SERVICE_SCHEMA(dict(call.data))
+        except vol.Invalid as err:
+            raise ServiceValidationError(str(err)) from err
+        if "entry_id" in data:
+            entry_id = data["entry_id"]
+            if entry_id in self.entries:
+                return entry_id
+            raise ServiceValidationError("Unknown task entry_id")
+
+        task = data["task"]
+        matches = [entry.entry_id for entry in self.entries.values()
+                   if entry.unique_id == task or entry.title == task]
+        if not matches:
+            raise ServiceValidationError("Unknown task name")
+        if len(matches) != 1:
+            raise ServiceValidationError("Ambiguous task name; use entry_id instead")
+        return matches[0]
 
     async def _authorize_service(self, entry_id, context):
         """Require control of the target task's actual completion button."""
