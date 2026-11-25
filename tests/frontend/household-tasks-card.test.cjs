@@ -12,11 +12,11 @@ function fixture(attributes = {}, config = {}, state = 'open') {
   let Card;
   const calls = [];
   const buttons = { '[data-tab]': [], '[data-complete]': [], '[data-early]': [] };
-  const range = {};
+  const range = {}, historyRange = {};
   const root = {
     innerHTML: '',
     querySelectorAll: selector => buttons[selector] || [],
-    querySelector: selector => selector === '#upcoming-range' ? range : null,
+    querySelector: selector => selector === '#upcoming-range' ? range : selector === '#history-range' ? historyRange : null,
   };
   const sandbox = {
     HTMLElement: class { attachShadow() { this.shadowRoot = root; } },
@@ -44,7 +44,7 @@ function fixture(attributes = {}, config = {}, state = 'open') {
     },
     callService: async (...args) => { calls.push(args); },
   };
-  return { card, root, buttons, range, calls, sandbox };
+  return { card, root, buttons, range, historyRange, calls, sandbox };
 }
 
 test('hostile dashboard title is rendered as escaped text', () => {
@@ -261,4 +261,140 @@ test('keyboard focus follows a matching replacement tab', () => {
   buttons['[data-tab]'].push({dataset:{tab:'open'},focus:()=>{focused++;}});
   card.setConfig({title:'Changed title'});
   assert.equal(focused,1);
+});
+
+test('default range is configurable and temporary selections remain local', () => {
+  const {card,root,range} = fixture({}, {upcoming_range:'14'}, 'closed');
+  card.filter='upcoming';
+  card.render();
+  assert.equal(card.upcomingRange,'14');
+  assert.ok(root.innerHTML.includes('value="14" selected'));
+  range.onchange({target:{value:'7'}});
+  card.setConfig({upcoming_range:'14',title:'New title'});
+  assert.equal(card.upcomingRange,'7');
+  card.setConfig({upcoming_range:'month'});
+  assert.equal(card.upcomingRange,'month');
+  card.setConfig({upcoming_range:'invalid'});
+  assert.equal(card.upcomingRange,'all');
+  assert.ok(card.constructor.getConfigForm().schema.some(field=>field.name==='upcoming_range'));
+});
+
+test('closed sensor-triggered task warnings remain visible on all tabs', () => {
+  const {card,root} = fixture({trigger_type:'numeric', due:null, entity_warnings:[hostile]}, {}, 'closed');
+  for (const tab of ['open','upcoming','history']) {
+    card.filter=tab; card.render();
+    assert.ok(root.innerHTML.includes('1 task needs attention'));
+    assert.ok(root.innerHTML.includes('Test task'));
+    assert.ok(root.innerHTML.includes(encoded));
+    assert.ok(!root.innerHTML.includes('<img'));
+  }
+});
+
+test('renamed diagnostic aggregate supplies full warnings and clears', () => {
+  const {card,root}=fixture({}, {}, 'closed');
+  const state={state:'1',attributes:{household_tasks_error_summary:true,errors:[
+    {task_name:hostile,warnings:['Missing sensor']}] }};
+  card.hass={...card._hass,states:{...card._hass.states,'sensor.renamed_errors':state}};
+  assert.ok(root.innerHTML.includes(encoded));
+  assert.ok(root.innerHTML.includes('Missing sensor'));
+  card.hass={...card._hass,states:{...card._hass.states,'sensor.renamed_errors':{...state,state:'0',attributes:{...state.attributes,errors:[]}}}};
+  assert.ok(!root.innerHTML.includes('task needs attention'));
+});
+
+test('history is newest first, escaped, read-only and omits malformed events', () => {
+  const {card,root}=fixture({history:[
+    {action:'opened',at:'2026-01-01T12:00:00Z'},
+    {action:'completed_early',at:'2026-01-03T12:00:00Z'},
+    {action:hostile,at:'2026-01-02T12:00:00Z'},
+    {action:'broken',at:'invalid'},null]}, {history_range:'all'}, 'closed');
+  card.filter='history'; card.render();
+  assert.ok(root.innerHTML.indexOf('Completed early') < root.innerHTML.indexOf(encoded));
+  assert.ok(root.innerHTML.indexOf(encoded) < root.innerHTML.indexOf('Opened'));
+  assert.ok(!root.innerHTML.includes('<img'));
+  assert.ok(!root.innerHTML.includes('broken'));
+  assert.ok(!root.innerHTML.includes('data-early='));
+  assert.ok(!root.innerHTML.includes('data-complete='));
+});
+
+test('upcoming updates patch live regions without replacing the select', () => {
+  const {card,root,range}=fixture({}, {}, 'closed');
+  card.filter='upcoming'; card.render();
+  const regions=Object.fromEntries(['h2','.tabs','.alerts','.task-list'].map(key=>[key,{innerHTML:''}]));
+  const originalQuery=root.querySelector;
+  root.querySelector=selector=>regions[selector] || originalQuery(selector);
+  let writes=0;
+  let markup=root.innerHTML;
+  Object.defineProperty(root,'innerHTML',{get:()=>markup,set:value=>{writes++;markup=value;}});
+  root.activeElement=range;
+  const first=card._hass.states['sensor.test_status'];
+  card.hass={...card._hass,states:{'sensor.test_status':{...first,attributes:{...first.attributes,category:'Changed category'}}}};
+  assert.equal(writes,0);
+  assert.equal(root.querySelector('#upcoming-range'),range);
+  assert.ok(regions['.task-list'].innerHTML.includes('Changed category'));
+  range.onchange({target:{value:'14'}});
+  assert.equal(card.upcomingRange,'14');
+  assert.equal(writes,0);
+});
+
+test('history filter defaults, independent selection and retained events', () => {
+  const past = days => new Date(Date.now()-days*86400000).toISOString();
+  const {card,root,range,historyRange}=fixture({history:[
+    {action:'completed',at:past(2),completed_by:'Recent person'},
+    {action:'completed',at:past(20),completed_by:'Older person'},
+    {action:'completed',at:past(70),completed_by:'Oldest person'}
+  ]},{upcoming_range:'14',history_range:'7'},'closed');
+  card.filter='history'; card.render();
+  assert.ok(root.innerHTML.includes('Recent person'));
+  assert.ok(!root.innerHTML.includes('Older person'));
+  historyRange.onchange({target:{value:'30'}});
+  assert.ok(root.innerHTML.includes('Older person'));
+  assert.ok(!root.innerHTML.includes('Oldest person'));
+  card.filter='upcoming'; card.render();
+  range.onchange({target:{value:'all'}});
+  card.filter='history'; card.render();
+  assert.equal(card.historyRange,'30');
+  historyRange.onchange({target:{value:'all'}});
+  assert.ok(root.innerHTML.includes('Oldest person'));
+  card.setConfig({history_range:'90'});
+  assert.equal(card.historyRange,'90');
+  historyRange.onchange({target:{value:'invalid'}});
+  assert.equal(card.historyRange,'30');
+  assert.ok(card.constructor.getConfigForm().schema.some(field=>field.name==='history_range'));
+});
+
+test('history displays escaped user names only for manual completion', () => {
+  const at=new Date(Date.now()-3600000).toISOString();
+  const {card,root}=fixture({history:[
+    {action:'completed',at,completed_by:hostile},
+    {action:'completed_early',at,completed_by:'A household member'},
+    {action:'completed',at},
+    {action:'auto_completed',at,completed_by:'Not a manual actor'}
+  ]},{},'closed');
+  card.filter='history'; card.render();
+  assert.ok(root.innerHTML.includes('Completed by '+encoded));
+  assert.ok(root.innerHTML.includes('Completed early by A household member'));
+  assert.ok(root.innerHTML.includes('No user recorded'));
+  assert.ok(root.innerHTML.includes('Automatically completed'));
+  assert.ok(!root.innerHTML.includes('Not a manual actor'));
+  assert.ok(!root.innerHTML.includes('<img'));
+});
+
+test('history dropdown stays mounted during live updates', () => {
+  const at=new Date(Date.now()-3600000).toISOString();
+  const {card,root,historyRange}=fixture({history:[]},{},'closed');
+  card.filter='history'; card.render();
+  const regions=Object.fromEntries(['h2','.tabs','.alerts','.task-list'].map(key=>[key,{innerHTML:''}]));
+  const originalQuery=root.querySelector;
+  root.querySelector=selector=>regions[selector] || originalQuery(selector);
+  let writes=0,markup=root.innerHTML;
+  Object.defineProperty(root,'innerHTML',{get:()=>markup,set:value=>{writes++;markup=value;}});
+  root.activeElement=historyRange;
+  const first=card._hass.states['sensor.test_status'];
+  card.hass={...card._hass,states:{'sensor.test_status':{...first,attributes:{...first.attributes,history:[{action:'completed',at,completed_by:'New user'}]}}}};
+  assert.equal(writes,0);
+  assert.equal(root.querySelector('#history-range'),historyRange);
+  assert.ok(regions['.task-list'].innerHTML.includes('New user'));
+  historyRange.onchange({target:{value:'7'}});
+  assert.equal(card.historyRange,'7');
+  assert.equal(writes,0);
 });

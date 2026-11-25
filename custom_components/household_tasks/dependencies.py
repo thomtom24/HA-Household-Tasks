@@ -4,7 +4,7 @@ from homeassistant.core import valid_entity_id
 from .const import DOMAIN
 
 
-AGGREGATE_KEYS = ("open_names", "latest_open")
+AGGREGATE_KEYS = ("open_names", "latest_open", "errors")
 
 
 def active_entity_ids(config):

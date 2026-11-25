@@ -19,6 +19,7 @@ DOMAIN = "household_tasks"
 SOURCE = "sensor.runtime_test_source"
 OPEN_LIST = "sensor.household_tasks_open_names"
 LATEST = "sensor.household_tasks_latest_open"
+ERRORS = "sensor.household_tasks_errors"
 
 
 async def wait_for(hass, predicate, description):
@@ -80,7 +81,7 @@ async def create_task(hass, name, friendly_name, kind, settings):
     return entry
 
 
-async def check_aggregates(hass, count, latest):
+async def check_aggregates(hass, count, latest, *, error_count=0):
     await wait_state(hass, OPEN_LIST, str(count))
     await wait_state(hass, LATEST, latest)
     from homeassistant.helpers import entity_registry as er
@@ -88,6 +89,10 @@ async def check_aggregates(hass, count, latest):
     registry = er.async_get(hass)
     assert registry.async_get_entity_id("sensor", DOMAIN, "household_tasks_open_names") == OPEN_LIST
     assert registry.async_get_entity_id("sensor", DOMAIN, "household_tasks_latest_open") == LATEST
+    await wait_state(hass, ERRORS, str(error_count))
+    assert registry.async_get_entity_id("sensor", DOMAIN, "household_tasks_errors") == ERRORS
+    assert len(hass.states.get(ERRORS).attributes["errors"]) == error_count
+    assert hass.states.get(ERRORS).attributes["count"] == error_count
     attrs = hass.states.get(OPEN_LIST).attributes
     assert attrs["count"] == count
     assert len(attrs["names"]) == count
@@ -117,6 +122,19 @@ async def create_phase(hass, directory):
     status, button = entities(hass, entry.entry_id)
     await wait_state(hass, status, "closed")
     await check_aggregates(hass, 0, "none")
+
+    # A closed sensor-triggered task must still report a broken dependency.
+    hass.states.async_set(SOURCE, "unavailable")
+    await wait_state(hass, ERRORS, "1")
+    assert state_is(hass, status, "closed")
+    warning = hass.states.get(ERRORS).attributes["errors"][0]
+    assert warning["task_name"] == "Runtime task"
+    assert warning["entry_id"] == entry.entry_id
+    assert SOURCE in hass.states.get(ERRORS).attributes["summary"]
+    assert "unavailable" in warning["warnings"][0]
+    hass.states.async_set(SOURCE, "0")
+    await wait_state(hass, ERRORS, "0")
+    assert hass.states.get(ERRORS).attributes["errors"] == []
 
     # Real state bus and targeted subscription, not a call to Engine.evaluate.
     hass.states.async_set(SOURCE, "10")
@@ -149,6 +167,7 @@ async def create_phase(hass, directory):
     await check_aggregates(hass, 0, "none")
     completed = hass.states.get(status).attributes["last_completed"]
     assert completed
+    assert hass.states.get(status).attributes["history"][-1]["completed_by"] == member.name
 
     # Rearm through actual state changes. Wait for the closed occurrence's
     # due field to clear before the next change so coalescing cannot skip it.
@@ -187,7 +206,14 @@ async def restart_phase(hass, directory):
     status, button = entities(hass, entry_id)
     assert (status, button) == (expected["status"], expected["button"])
     await wait_state(hass, status, "open")
-    await check_aggregates(hass, 1, "Runtime task")
+    # The synthetic source is an in-memory state, not a restored entity.
+    # Verify that diagnostics accurately report its absence after restart.
+    assert hass.states.get(SOURCE) is None
+    await check_aggregates(hass, 1, "Runtime task", error_count=1)
+    warning = hass.states.get(ERRORS).attributes["errors"][0]
+    assert warning["entry_id"] == entry_id
+    assert any("entity missing" in message and SOURCE in message
+               for message in warning["warnings"])
     attrs = hass.states.get(status).attributes
     for key in ("last_opened", "last_completed", "history"):
         assert attrs[key] == expected[key], (key, attrs[key], expected[key])
@@ -195,11 +221,13 @@ async def restart_phase(hass, directory):
     # Exercise standard HA entity services with a real authorised user.
     member = next(user for user in await hass.auth.async_get_users() if user.name == "CI member")
     hass.states.async_set(SOURCE, "10")
-    await hass.async_block_till_done()
+    # Wait for the dependency recovery, not merely for the service bus to settle.
+    await check_aggregates(hass, 1, "Runtime task")
     await hass.services.async_call(
         "button", "press", {"entity_id": button}, blocking=True,
         context=Context(user_id=member.id))
     await wait_state(hass, status, "closed")
+    assert hass.states.get(status).attributes["history"][-1]["completed_by"] == member.name
     await check_aggregates(hass, 0, "none")
     result = await hass.config_entries.async_remove(entry_id)
     assert not result["require_restart"], result
@@ -213,10 +241,11 @@ async def restart_phase(hass, directory):
                                   "completion", {"interval_days": 14, "first_due_date": first_due})
     new_status, _ = entities(hass, new_entry.entry_id)
     await wait_state(hass, new_status, "closed")
-    await complete(hass, new_entry.entry_id, early=True)
+    await complete(hass, new_entry.entry_id, Context(user_id=member.id), early=True)
     await wait_for(hass, lambda: bool(hass.states.get(new_status).attributes.get("last_completed")),
                    "early completion persisted")
     assert hass.states.get(new_status).attributes["history"][-1]["action"] == "completed_early"
+    assert hass.states.get(new_status).attributes["history"][-1]["completed_by"] == member.name
     await check_aggregates(hass, 0, "none")
     print("PASS: restart persistence, standard button, last-task removal, recreation, early completion",
           flush=True)

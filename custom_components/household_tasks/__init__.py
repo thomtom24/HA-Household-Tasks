@@ -304,8 +304,26 @@ class Engine:
         held = self.reloading_entries.get(entry.entry_id)
         return held[1] if held is not None else self.conf(entry).get("friendly_name") or entry.title
 
+    def task_warnings(self, entry):
+        """Share the task status sensor's diagnostics with the aggregate sensor."""
+        s = self.state(entry)
+        c = self.conf(entry)
+        history_invalid = entry.entry_id in self.invalid_history
+        warnings = list(s.get("entity_warnings", []))
+        if history_invalid:
+            warnings.append("Task history is malformed; task paused. Restore a valid backup with Home Assistant stopped.")
+        if len(c.get("friendly_name") or entry.title) > MAX_LENGTH_STATE_STATE:
+            warnings.append("Legacy task name exceeds the Home Assistant state limit. Edit the task name; the original name is retained.")
+        if self.storage_failed:
+            warnings.append("Task history is not saved to disk. Automatic retry enabled; avoid restarting Home Assistant.")
+        if entry.entry_id in self.cyclic_entries:
+            warnings.append("Circular task dependency detected. Automatic transitions paused; edit the task rules to resolve the loop.")
+        if entry.entry_id in self.evaluation_errors:
+            warnings.append("Task evaluation failed; check Home Assistant logs. Automatic retry enabled.")
+        return warnings
+
     def aggregate_snapshot(self):
-        """Return the existing aggregate sensor states and attributes."""
+        """Return domain-level sensor states and attributes."""
         # Keep a task's last published aggregate membership during its options reload.
         open_entries = [e for e in self.entries.values()
                         if e.entry_id not in self.reloading_entries and self.state(e).get("open")]
@@ -340,9 +358,19 @@ class Engine:
                 "opened_at": self.state(latest).get("last_opened"),
                 "open_count": len(open_entries),
             }
+        errors = []
+        entries = {**self.entries, **{key: entry for key, (entry, _) in self.reloading_entries.items()}}
+        for entry in sorted(entries.values(), key=lambda e: (self.aggregate_name(e).casefold(), e.entry_id)):
+            warnings = self.task_warnings(entry)
+            if warnings:
+                errors.append({"entry_id": entry.entry_id, "task_name": self.aggregate_name(entry),
+                               "warnings": warnings})
+        summary = "\n".join(f"{item['task_name']}: {'; '.join(item['warnings'])}" for item in errors)
         return {
             "open_names": (len(names), open_attributes),
             "latest_open": (latest_name[:MAX_LENGTH_STATE_STATE], latest_attributes),
+            "errors": (len(errors), {"household_tasks_error_summary": True, "count": len(errors),
+                                     "errors": errors, "summary": summary or "No task errors."}),
         }
 
     def publish_open_tasks(self):
@@ -362,7 +390,7 @@ class Engine:
 
     def notify(self, entry_id):
         self.publish_open_tasks()
-        self._notify_evaluation_warning(entry_id)
+        self._notify_evaluation_warning(entry_id, publish_aggregates=False)
 
     def _storage_warning(self, failed):
         if self.storage_failed == failed:
@@ -409,8 +437,11 @@ class Engine:
                                        dt_util.as_utc(now) >= self.storage_retry):
                 await self.save()
 
-    def record(self, s, action, now):
-        s.setdefault("events", []).append({"action": action, "at": now.isoformat()})
+    def record(self, s, action, now, *, completed_by=None):
+        event = {"action": action, "at": now.isoformat()}
+        if completed_by is not None:
+            event["completed_by"] = completed_by
+        s.setdefault("events", []).append(event)
         s["events"] = s["events"][-100:]
 
     @staticmethod
@@ -815,19 +846,33 @@ class Engine:
                     await self.save()
                 self.notify(entry.entry_id)
 
-    def _finish(self, s, now, action):
+    def _finish(self, s, now, action, *, completed_by=None):
         s["open"] = False
         s.pop("pending_rebind", None)
         s.pop("carried_open", None)
         s["last_completed"] = now.isoformat()
-        self.record(s, action, now)
+        self.record(s, action, now, completed_by=completed_by)
 
-    async def act(self, entry_id, action):
+    async def completion_user_name(self, context):
+        """Resolve the trusted HA caller context, not client-supplied data."""
+        if context is None or context.user_id is None:
+            return None
+        try:
+            user = await self.hass.auth.async_get_user(context.user_id)
+        except Exception:
+            # Attribution is optional; do not prevent a valid completion.
+            _LOGGER.warning("Unable to resolve household task completion user")
+            return None
+        name = user.name if user is not None else None
+        return name if isinstance(name, str) and name.strip() else None
+
+    async def act(self, entry_id, action, *, context=None):
         if action not in ("complete", "complete_early"):
             raise ServiceValidationError("Unsupported task action")
         entry = self.entries.get(entry_id)
         if not entry:
             raise ServiceValidationError("Unknown task entry")
+        completed_by = await self.completion_user_name(context)
         async with self.lock:
             if self.entries.get(entry_id) is not entry:
                 raise ServiceValidationError("Task entry changed or unloaded; retry the action")
@@ -851,7 +896,7 @@ class Engine:
                     raise ServiceValidationError("Task has no future scheduled occurrence to complete early")
                 # Record the future occurrence as satisfied without opening it.
                 # Completion-relative tasks will recalculate from this timestamp.
-                self._finish(s, now, "completed_early")
+                self._finish(s, now, "completed_early", completed_by=completed_by)
                 s["completed_token"] = token
                 s["next_token"] = token
                 s["completed_early_today"] = True
@@ -859,7 +904,7 @@ class Engine:
                 if not s.get("open"):
                     return
                 token = s.get("active_token")
-                self._finish(s, now, "completed")
+                self._finish(s, now, "completed", completed_by=completed_by)
                 s["completed_token"] = token
             saved = await self.save()
             self.notify(entry_id)
@@ -916,7 +961,7 @@ class Engine:
     async def _complete_service(self, call, action):
         entry_id = self.find_entry(call)
         await self._authorize_service(entry_id, call.context)
-        await self.act(entry_id, action)
+        await self.act(entry_id, action, context=call.context)
 
     async def _service_complete(self, call):
         await self._complete_service(call, "complete")
@@ -948,8 +993,10 @@ class Engine:
                 self.evaluation_errors.discard(entry_id)
                 self._notify_evaluation_warning(entry_id)
 
-    def _notify_evaluation_warning(self, entry_id):
-        """Refresh task warnings without writing history or aggregate states."""
+    def _notify_evaluation_warning(self, entry_id, *, publish_aggregates=True):
+        """Refresh task warnings and the error aggregate without writing history."""
+        if publish_aggregates and getattr(self, "aggregate_listeners", ()):
+            self.publish_open_tasks()
         for listener in list(self.listeners):
             try:
                 listener(entry_id)

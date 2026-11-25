@@ -38,8 +38,12 @@ Add a manual card to your dashboard:
 
 ```yaml
 type: custom:household-tasks-card
+upcoming_range: "14"  # Optional: "7", "14", "month" or "all" (default)
+history_range: "30"   # Optional: "7", "14", "30" (default), "90" or "all"
 title: Household Tasks
 ```
+
+The dashboard card editor also lets you set the default upcoming range. The range selector on the Upcoming tab temporarily overrides it for the current card session. History has its own configurable default range (last 7, 14, 30 or 90 local calendar days, or all available; default 30 days). It lists available lifecycle events across currently configured tasks (up to 20 exposed events per task), newest first, using Home Assistant’s time zone. The temporary history and upcoming filters are independent. Manual and early completions record the authenticated Home Assistant account display name when identifiable, including calls through the standard completion button. Older entries and actions without a resolvable user show “No user recorded”; automatic completions are identified separately. The warning panel identifies affected tasks and their full warnings on every tab, including closed sensor-triggered tasks without a future due date.
 
 If you previously registered `/local/household-tasks-card.js`, remove that resource and use the bundled URL above. A legacy copy already installed in your www directory is not automatically replaced by HACS. The repository's legacy file now only imports the bundled card. Refresh your browser after installation or upgrades. The bundled card is served by the integration; you only need to register its resource once.
 
@@ -113,12 +117,13 @@ After early completion, the button shows **Completed today** and remains disable
 
 Each task exposes a status sensor with open or closed state, due dates, opening and completion timestamps, recent history and entity warnings.
 
-Two registered aggregate sensors are available. They are managed at integration level, independently of individual tasks, and keep their existing default entity IDs and attributes. Home Assistant's entity registry permits renaming; if an unrelated entity already occupies a default ID, Home Assistant may assign a suffix. Check the actual IDs after upgrading before changing automations:
+Three registered aggregate sensors are available. They are managed at integration level, independently of individual tasks, and keep their existing default entity IDs and attributes. Home Assistant's entity registry permits renaming; if an unrelated entity already occupies a default ID, Home Assistant may assign a suffix. Check the actual IDs after upgrading before changing automations:
 
 | Entity | Purpose |
 | --- | --- |
 | `sensor.household_tasks_open_names` | Number of outstanding tasks, with `names`, `tasks`, `count` and `announcement` attributes. |
 | `sensor.household_tasks_latest_open` | Friendly name of the most recently opened outstanding task, or `none`. Includes `task_name`, `opened_at` and `open_count`. |
+| `sensor.household_tasks_errors` | Number of tasks needing attention (0 when healthy), including closed tasks. Includes `errors` (task names, entry IDs and individual warnings), `summary` (full readable text) and `count`. The numeric state avoids truncating warnings at the HA state length limit. |
 
 Use the announcement text in an automation or voice assistant:
 
@@ -130,6 +135,12 @@ Retrieve the list of outstanding task names:
 
 ```jinja2
 {{ state_attr('sensor.household_tasks_open_names', 'names') }}
+```
+
+Retrieve all diagnostic messages for notifications without a custom template sensor:
+
+```jinja2
+{{ state_attr('sensor.household_tasks_errors', 'summary') }}
 ```
 
 A change to the latest-open sensor does not necessarily mean a new task opened: it may also mean the newest task was completed. Consider the `open_count` and `opened_at` attributes when building notifications.
@@ -182,9 +193,9 @@ Household Tasks processes task data inside Home Assistant. It has no integration
 | Data | Location and retention |
 | --- | --- |
 | Task names, categories, areas, entity references and rule settings | Home Assistant config entries, until the entry is removed. |
-| Task lifecycle timestamps, occurrence identifiers, rule signatures and completion records | `.storage/household_tasks.history`; up to the latest 100 lifecycle events per task when new events are recorded. Calendar occurrence identifiers include event titles and start times, and rule signatures may include calendar filters or expected entity states. |
+| Task lifecycle timestamps, occurrence identifiers, rule signatures and completion records (including the authenticated HA account display name when available) | `.storage/household_tasks.history`; up to the latest 100 lifecycle events per task when new events are recorded. Calendar occurrence identifiers include event titles and start times, and rule signatures may include calendar filters or expected entity states. |
 | Calendar results | In-memory cache containing event start/end and summary/message only. Descriptions, locations, attendees and other provider metadata are not retained by the integration's cache. Fresh cache is reused for up to five minutes; during failures a cache may be consulted for display for less than 30 minutes. Expired entries are pruned during scheduler sweeps; unused calendar data is discarded when the last referencing task unloads. Responses invalidated during a request are discarded rather than trusted. |
-| Status and aggregate sensors | Task names, due dates, opening/completion times, recent history (up to 20 events), warnings and announcement text are exposed as Home Assistant entity states/attributes. |
+| Status and aggregate sensors | Task names, due dates, opening/completion times, recent history (up to 20 events, including completion display names where recorded), warnings and announcement text are exposed as Home Assistant entity states/attributes. |
 
 The history store requests Home Assistant's private-file mode on writes. It is not encrypted by the integration, and this does not protect data from administrators, privileged add-ons or backups. Existing file permissions depend on the platform and when the file is next written.
 

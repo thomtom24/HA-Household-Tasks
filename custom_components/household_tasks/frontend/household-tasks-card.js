@@ -5,13 +5,41 @@ const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character =>
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 }[character]));
 const asText = value => typeof value === 'string' ? value : '';
-const validTab = value => value === 'upcoming' ? 'upcoming' : 'open';
+const validTab = value => ['upcoming', 'history'].includes(value) ? value : 'open';
 const validRange = value => ['7', '14', 'month', 'all'].includes(value) ? value : 'all';
+const validHistoryRange = value => ['7', '14', '30', '90', 'all'].includes(value) ? value : '30';
 
 class HouseholdTasksCard extends HTMLElement {
-  setConfig(config) { this.config = config; this.filter = validTab(this.filter); this.upcomingRange = validRange(this.upcomingRange); this.render(); }
+  setConfig(config) {
+    const defaultRange = validRange(String(config.upcoming_range ?? 'all'));
+    if (this._defaultRange !== defaultRange) this.upcomingRange = defaultRange;
+    this._defaultRange = defaultRange;
+    const defaultHistoryRange = validHistoryRange(String(config.history_range ?? '30'));
+    if (this._defaultHistoryRange !== defaultHistoryRange) this.historyRange = defaultHistoryRange;
+    this._defaultHistoryRange = defaultHistoryRange;
+    this.config = config;
+    this.filter = validTab(this.filter);
+    this.upcomingRange = validRange(this.upcomingRange);
+    this.render();
+  }
   set hass(hass) { this._hass = hass; this.render(); }
-  static getStubConfig() { return { title: 'Household Tasks' }; }
+  static getStubConfig() { return { title: 'Household Tasks', upcoming_range: 'all', history_range: '30' }; }
+  static getConfigForm() {
+    return {
+      schema: [
+        {name:'title', selector:{text:{}}},
+        {name:'upcoming_range', selector:{select:{options:[
+          {value:'7',label:'7 days'}, {value:'14',label:'14 days'},
+          {value:'month',label:'1 month'}, {value:'all',label:'All'}
+        ]}}},
+        {name:'history_range', selector:{select:{options:[
+          {value:'7',label:'7 days'}, {value:'14',label:'14 days'},
+          {value:'30',label:'30 days'}, {value:'90',label:'90 days'}, {value:'all',label:'All available'}
+        ]}}}
+      ],
+      computeLabel: field => ({upcoming_range:'Default upcoming time range',history_range:'Default history time range',title:'Title'})[field.name]
+    };
+  }
   async completeTask(button, entry, early) {
     this._pending ??= new Set();
     if (this._pending.has(entry) || button.disabled) return;
@@ -35,13 +63,25 @@ class HouseholdTasksCard extends HTMLElement {
     if (!this.shadowRoot) this.attachShadow({mode:'open'});
     this.filter = validTab(this.filter);
     this.upcomingRange = validRange(this.upcomingRange);
+    this.historyRange = validHistoryRange(this.historyRange);
     const tasks = Object.entries(this._hass.states)
       .filter(([id,s]) => id.startsWith('sensor.') && asText(s?.attributes?.task_entry_id).trim() && (['open','closed'].includes(s.state) || s.attributes.history_invalid === true))
       .map(([id,s]) => ({id, name:asText(s.attributes.task_name) || (asText(s.attributes.friendly_name) || id).replace(/\s+status$/i, ''), due:s.attributes.due, dueAtOpen:s.attributes.due_at_open, opened:s.attributes.last_opened,
         entry:s.attributes.task_entry_id, state:s.state, historyInvalid:s.attributes.history_invalid === true, category:asText(s.attributes.category), triggerType:s.attributes.trigger_type,
         warnings:Array.isArray(s.attributes.entity_warnings)?s.attributes.entity_warnings.filter(warning => typeof warning === 'string'):[],
+        history:Array.isArray(s.attributes.history)?s.attributes.history:[],
         completedEarlyToday:s.attributes.completed_early_today === true,
         manualAllowed:s.attributes.manual_completion_allowed === true || (s.attributes.manual_completion_allowed == null && (!s.attributes.close_type || s.attributes.close_type === "manual" || asText(s.attributes.close_type).startsWith("manual_or_")))}));
+    // Identify the registered diagnostic sensor by its marker, not its default
+    // entity ID, so registry renames do not break the card.
+    const aggregate = Object.values(this._hass.states).find(s =>
+      s?.attributes?.household_tasks_error_summary === true &&
+      !['unknown','unavailable'].includes(s.state) && Array.isArray(s.attributes.errors));
+    const errors = aggregate ? aggregate.attributes.errors.filter(item =>
+      typeof item?.task_name === 'string' && Array.isArray(item.warnings))
+      .map(item=>({name:item.task_name, warnings:item.warnings.filter(w=>typeof w==='string')}))
+      .filter(item=>item.warnings.length) :
+      tasks.filter(t=>t.warnings.length).map(t=>({name:t.name,warnings:t.warnings}));
     const now = new Date();
     const language = this._hass.locale?.language || this._hass.language || navigator.language || 'en-GB';
     let timeZone = this._hass.config?.time_zone;
@@ -54,6 +94,13 @@ class HouseholdTasksCard extends HTMLElement {
       const p = dateParts(date);
       return Date.UTC(Number(p.year), Number(p.month)-1, Number(p.day)) / 86400000;
     };
+    const history = this.filter === 'history' ? tasks.flatMap(t=>t.history.filter(event=>{
+      if (typeof event?.action !== 'string' || typeof event.at !== 'string') return false;
+      const date = new Date(event.at);
+      if (!Number.isFinite(date.getTime()) || date > now) return false;
+      return this.historyRange === 'all' || dayNumber(now) - dayNumber(date) < Number(this.historyRange);
+    }).map(event=>({name:t.name,action:event.action,at:event.at,completedBy:asText(event.completed_by)})))
+      .sort((a,b)=>new Date(b.at)-new Date(a.at)) : [];
     const p = dateParts(now);
     const endOfRange = new Date(Date.UTC(Number(p.year), Number(p.month)-1, Number(p.day)));
     if (this.upcomingRange === 'month') {
@@ -111,22 +158,45 @@ class HouseholdTasksCard extends HTMLElement {
       if (difference === 0 && t.dueAtOpen) return {key:'today',label:'Due today'};
       return {key:'open',label:'Open'};
     };
-    const markup = `<ha-card><div class="wrap"><h2>${escapeHtml(asText(this.config.title) || 'Household Tasks')}</h2>
-      <div class="tabs"><button data-tab="open" aria-pressed="${this.filter === 'open' ? 'true' : 'false'}">Open (${tasks.filter(t=>t.state==='open').length})</button>
-      <button data-tab="upcoming" aria-pressed="${this.filter === 'upcoming' ? 'true' : 'false'}">Upcoming (${upcoming.length})</button></div>
+    const actionLabels = {opened:'Opened', completed:'Completed', completed_early:'Completed early', auto_completed:'Automatically completed', skipped:'Skipped', expired:'Expired', reopened:'Reopened', snoozed:'Snoozed'};
+    const historyMarkup = history.length ? history.map(event => {
+      const date = new Date(event.at);
+      const time = new Intl.DateTimeFormat(language,{timeZone,hour:'2-digit',minute:'2-digit'}).format(date);
+      const action = Object.hasOwn(actionLabels,event.action) ? actionLabels[event.action] : event.action.replace(/_/g,' ');
+      const actor = ['completed','completed_early'].includes(event.action) ?
+        (event.completedBy.trim() ? ' by ' + event.completedBy : ' · No user recorded') : '';
+      return `<div class="task history-item"><div class="task-body"><div class="task-title"><b>${escapeHtml(event.name)}</b></div><small>${escapeHtml(action + actor)} · ${escapeHtml(formatDateTime(date))} · ${escapeHtml(time)}</small></div></div>`;
+    }).join('') : '<p>No task activity in this time range.</p>';
+    const regions = {
+      title: escapeHtml(asText(this.config.title) || 'Household Tasks'),
+      tabs: `<button data-tab="open" aria-pressed="${this.filter === 'open' ? 'true' : 'false'}">Open (${tasks.filter(t=>t.state==='open').length})</button>
+      <button data-tab="upcoming" aria-pressed="${this.filter === 'upcoming' ? 'true' : 'false'}">Upcoming (${upcoming.length})</button>
+      <button data-tab="history" aria-pressed="${this.filter === 'history' ? 'true' : 'false'}">History</button>`,
+      alerts: errors.length ? `<div class="health-alert" role="status">⚠ ${errors.length} ${errors.length===1?'task needs':'tasks need'} attention<ul>${errors.map(item=>`<li><b>${escapeHtml(item.name)}</b><br>${escapeHtml(item.warnings.join('; '))}</li>`).join('')}</ul></div>` : '',
+      content: this.filter === 'history' ? historyMarkup : (visible.length ? visible.map(t=>`<div class="task status-${status(t).key}"><div class="task-body"><div class="task-title"><b>${escapeHtml(t.name)}</b><span class="status-pill">${escapeHtml(status(t).label)}</span></div><small>${escapeHtml(t.category||'')}
+      ${dueInfo(t)?' · '+escapeHtml(dueInfo(t)):''}</small>${t.warnings.length?`<small class="warning">⚠ ${escapeHtml(t.warnings.join('; '))}</small>`:''}</div>
+      ${t.manualAllowed && (t.state==='open' || (t.state==='closed' && ['completion','weekly','monthly','yearly'].includes(t.triggerType) && t.due))?`<button data-${t.state==='open'?'complete':'early'}="${escapeHtml(t.entry)}" ${(this._pending?.has(t.entry) || (t.state==='closed' && t.completedEarlyToday)) ? 'disabled aria-disabled="true"' : ''}>✓ ${t.state==='open'?'Done':(t.completedEarlyToday?'Completed today':'Complete early')}</button>`:''}</div>`).join(''):'<p>No tasks in this view.</p>')
+    };
+    const markup = `<ha-card><div class="wrap"><h2>${regions.title}</h2>
+      <div class="tabs">${regions.tabs}</div>
       ${this.filter === 'upcoming' ? `<div class="range-filter"><label for="upcoming-range">Show tasks due within</label>
       <select id="upcoming-range" aria-label="Upcoming task time range">
         <option value="7" ${this.upcomingRange === '7' ? 'selected' : ''}>7 days</option>
         <option value="14" ${this.upcomingRange === '14' ? 'selected' : ''}>14 days</option>
         <option value="month" ${this.upcomingRange === 'month' ? 'selected' : ''}>1 month</option>
         <option value="all" ${this.upcomingRange === 'all' ? 'selected' : ''}>All</option>
+      </select></div>` : this.filter === 'history' ? `<div class="range-filter"><label for="history-range">Show activity from</label>
+      <select id="history-range" aria-label="History time range">
+        <option value="7" ${this.historyRange === '7' ? 'selected' : ''}>Last 7 days</option>
+        <option value="14" ${this.historyRange === '14' ? 'selected' : ''}>Last 14 days</option>
+        <option value="30" ${this.historyRange === '30' ? 'selected' : ''}>Last 30 days</option>
+        <option value="90" ${this.historyRange === '90' ? 'selected' : ''}>Last 90 days</option>
+        <option value="all" ${this.historyRange === 'all' ? 'selected' : ''}>All available</option>
       </select></div>` : ''}
-      ${tasks.some(t=>t.warnings.length)?`<div class="health-alert" role="status">⚠ ${tasks.filter(t=>t.warnings.length).length} task(s) need attention. Check their status sensors for details.</div>`:""}
-      ${visible.length ? visible.map(t=>`<div class="task status-${status(t).key}"><div class="task-body"><div class="task-title"><b>${escapeHtml(t.name)}</b><span class="status-pill">${escapeHtml(status(t).label)}</span></div><small>${escapeHtml(t.category||'')}
-      ${dueInfo(t)?' · '+escapeHtml(dueInfo(t)):''}</small>${t.warnings.length?`<small class="warning">⚠ ${escapeHtml(t.warnings.join('; '))}</small>`:''}</div>
-      ${t.manualAllowed && (t.state==='open' || (t.state==='closed' && ['completion','weekly','monthly','yearly'].includes(t.triggerType) && t.due))?`<button data-${t.state==='open'?'complete':'early'}="${escapeHtml(t.entry)}" ${(this._pending?.has(t.entry) || (t.state==='closed' && t.completedEarlyToday)) ? 'disabled aria-disabled="true"' : ''}>✓ ${t.state==='open'?'Done':(t.completedEarlyToday?'Completed today':'Complete early')}</button>`:''}</div>`).join(''):'<p>No tasks in this view.</p>'}
+      <div class="alerts">${regions.alerts}</div>
+      <div class="task-list">${regions.content}</div>
       </div></ha-card><style>.wrap{padding:16px}h2{margin:0 0 16px;font-size:20px}
-      .tabs{display:flex;gap:8px;margin-bottom:12px}.tabs button,.task button{border:1px solid var(--divider-color);
+      .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}.tabs button,.task button{border:1px solid var(--divider-color);
       border-radius:8px;padding:9px;background:var(--card-background-color);color:var(--primary-text-color);cursor:pointer}
       .task{--task-accent:var(--primary-color,#2196f3);display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;margin:8px 0;border-left:4px solid var(--task-accent);border-radius:9px;background:var(--secondary-background-color,rgba(127,127,127,.07))}
       .task-body{min-width:0;flex:1}.task-title{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.task-title b{overflow-wrap:anywhere}
@@ -138,17 +208,36 @@ class HouseholdTasksCard extends HTMLElement {
       .range-filter{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px}
       .range-filter label{font-size:13px;color:var(--secondary-text-color)}
       .range-filter select{background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:8px;padding:7px 10px;font:inherit}
-      .task button{flex-shrink:0;min-height:44px}button:focus-visible,select:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}@media(max-width:420px){.task{flex-wrap:wrap}.task button{width:100%}}.task button:disabled{opacity:.55;cursor:default}.health-alert,.warning{color:var(--warning-color,#c77b00)}.health-alert{margin:8px 0;padding:8px;border:1px solid currentColor;border-radius:8px;font-size:13px}small{display:block;color:var(--secondary-text-color);margin-top:4px}</style>`;
+      .task button{flex-shrink:0;min-height:44px}button:focus-visible,select:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}@media(max-width:420px){.task{flex-wrap:wrap}.task button{width:100%}}.task button:disabled{opacity:.55;cursor:default}.health-alert,.warning{color:var(--warning-color,#c77b00)}.health-alert ul{margin:6px 0 0;padding-inline-start:20px}.health-alert li{margin:4px 0;overflow-wrap:anywhere}.health-alert{margin:8px 0;padding:8px;border:1px solid currentColor;border-radius:8px;font-size:13px}small{display:block;color:var(--secondary-text-color);margin-top:4px}</style>`;
     if (markup === this._lastMarkup) return;
     const focused = this.shadowRoot.activeElement;
     const focusKey = focused?.dataset ? ['tab','complete','early'].find(key => focused.dataset[key] !== undefined) : undefined;
     const focusValue = focusKey ? focused.dataset[focusKey] : undefined;
-    const rangeFocused = focused?.id === 'upcoming-range';
+    const rangeFocused = focused?.id === 'upcoming-range' || focused?.id === 'history-range';
+    // Keep the native range control mounted when task state changes. Replacing
+    // its node closes the OS/browser popup, even if focus is restored.
+    const selectors = {title:'h2',tabs:'.tabs',alerts:'.alerts',content:'.task-list'};
+    const nodes = Object.fromEntries(Object.entries(selectors).map(([key,selector]) =>
+      [key,this.shadowRoot.querySelector(selector)]));
+    if (this._lastTab === this.filter && Object.values(nodes).every(Boolean)) {
+      for (const key of Object.keys(regions)) {
+        if (this._lastRegions?.[key] !== regions[key]) nodes[key].innerHTML = regions[key];
+      }
+    } else {
+      this.shadowRoot.innerHTML = markup;
+    }
     this._lastMarkup = markup;
-    this.shadowRoot.innerHTML = markup;
+    this._lastTab = this.filter;
+    this._lastRegions = regions;
     this.shadowRoot.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{this.filter=validTab(b.dataset.tab);this.render()});
-    const rangeSelector = this.shadowRoot.querySelector('#upcoming-range');
-    if (rangeSelector) rangeSelector.onchange = event => { this.upcomingRange = validRange(event.target.value); this.render(); };
+    const historySelected = this.filter === 'history';
+    const rangeSelector = this.shadowRoot.querySelector(historySelected ? '#history-range' : '#upcoming-range');
+    if (rangeSelector) {
+      const key = historySelected ? 'historyRange' : 'upcomingRange';
+      const validate = historySelected ? validHistoryRange : validRange;
+      if (rangeSelector.value !== this[key]) rangeSelector.value = this[key];
+      rangeSelector.onchange = event => { this[key] = validate(event.target.value); this.render(); };
+    }
     this.shadowRoot.querySelectorAll('[data-complete]').forEach(b=>b.onclick=()=>this.completeTask(b,b.dataset.complete,false));
     this.shadowRoot.querySelectorAll('[data-early]').forEach(button => {
       button.onclick = async () => {
@@ -167,10 +256,10 @@ class HouseholdTasksCard extends HTMLElement {
     const replacement = rangeFocused ? rangeSelector : focusKey ?
       Array.from(this.shadowRoot.querySelectorAll('[data-' + focusKey + ']'))
         .find(element => element.dataset[focusKey] === focusValue) : null;
-    if (replacement && !replacement.disabled) replacement.focus?.({preventScroll:true});
+    if (replacement && replacement !== focused && !replacement.disabled) replacement.focus?.({preventScroll:true});
   }
 }
 if (!customElements.get?.('household-tasks-card')) customElements.define('household-tasks-card',HouseholdTasksCard);
 window.customCards=window.customCards||[];
-if (!window.customCards.some(card => card.type === 'household-tasks-card')) window.customCards.push({type:'household-tasks-card',name:'Household Tasks',description:'Open and upcoming household tasks'});
+if (!window.customCards.some(card => card.type === 'household-tasks-card')) window.customCards.push({type:'household-tasks-card',name:'Household Tasks',description:'Open and upcoming household tasks, errors and recent activity'});
 }

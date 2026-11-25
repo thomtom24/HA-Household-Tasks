@@ -1,7 +1,7 @@
 """Validate service registration and task selection before authorizing completion."""
 import asyncio
 from types import MappingProxyType, SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import ANY, AsyncMock, Mock, patch
 
 import pytest
 import voluptuous as vol
@@ -85,7 +85,7 @@ def test_valid_exact_selectors_are_preserved(action, selector):
         assert COMPLETION_SERVICE_SCHEMA(selector) == selector
         await getattr(engine, "_service_" + action)(call)
         engine._authorize_service.assert_awaited_once_with("first", call.context)
-        engine.act.assert_awaited_once_with("first", action)
+        engine.act.assert_awaited_once_with("first", action, context=call.context)
 
     asyncio.run(scenario())
 
@@ -126,7 +126,7 @@ def test_ambiguous_names_require_entry_id(action, collision):
         engine._authorize_service.assert_not_awaited()
         engine.act.assert_not_awaited()
         await getattr(engine, "_service_" + action)(request({"entry_id": "second"}))
-        engine.act.assert_awaited_once_with("second", action)
+        engine.act.assert_awaited_once_with("second", action, context=ANY)
 
     asyncio.run(scenario())
 
@@ -137,7 +137,7 @@ def test_same_entry_matching_title_and_unique_id_is_not_ambiguous(action):
         engine = engine_for_selection()
         engine.entries["first"].title = "first_task"
         await getattr(engine, "_service_" + action)(request({"task": "first_task"}))
-        engine.act.assert_awaited_once_with("first", action)
+        engine.act.assert_awaited_once_with("first", action, context=ANY)
 
     asyncio.run(scenario())
 
