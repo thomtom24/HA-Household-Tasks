@@ -30,22 +30,38 @@ Create each task in the Home Assistant interface, then use one dashboard card to
 
 ## Quick start
 
-**Requirements:** Home Assistant 2025.12.0 or later, HACS installed and configured (recommended), and access to an administrator account for setup. The integration is currently installed as a custom HACS repository, not from the default catalogue.
+**Requirements:** Home Assistant 2025.12.0 or later and an administrator account for setup.
 
-### 1. Install the integration
+<!-- ha-marketplace:exclude-start -->
+### Install the integration
 
-1. Open HACS and select **Custom repositories** from its three-dot menu.
-2. Enter `https://github.com/thomtom24/HA-Household-Tasks`, select the **Integration** type and add it.
-3. Find **Household Tasks** in HACS and download the latest stable release.
+[Open Household Tasks in your Home Assistant](https://my.home-assistant.io/redirect/hacs_repository/?owner=thomtom24&repository=HA-Household-Tasks&category=integration)
+
+This link opens Marketplace on Home Assistant 2026.11 or later, or HACS on earlier supported versions. If the repository is not in the catalogue, the link can help you add it.
+
+**Home Assistant 2026.11 or later — built-in Marketplace**
+
+1. Open **Settings → Marketplace** and search for **Household Tasks**.
+2. If the repository is not listed, choose **Add from link**, enter `https://github.com/thomtom24/HA-Household-Tasks` and follow the prompts to add it. Connect GitHub if requested.
+3. Open the repository, select **Install** and confirm. Restart Home Assistant if prompted.
+
+**Home Assistant 2025.12–2026.10 — HACS**
+
+1. Open HACS and search for **Household Tasks**.
+2. Only if the repository is not listed, open **Custom repositories** from the three-dot menu and add `https://github.com/thomtom24/HA-Household-Tasks` as an **Integration**.
+3. Open the repository and download the latest stable release.
 4. Restart Home Assistant after the download completes.
 
-### 2. Create your first task
+See the [installation guide](docs/installation.md) for detailed instructions for both methods.
+<!-- ha-marketplace:exclude-end -->
 
-Go to **Settings → Devices & services → Add integration**, search for **Household Tasks**, and follow the wizard. For example, create a task called Change bedding, select **Time since last completion**, enter 7 days, choose a first due date, and select **Manual completion**.
+### Create your first task
+
+If installation opens the setup wizard, continue there. Otherwise go to **Settings → Devices & services → Add integration**, search for **Household Tasks**, and follow the wizard. For example, create a task called Change bedding, select **Time since last completion**, enter 7 days, choose a first due date, and select **Manual completion**.
 
 Each task is a separate configuration entry. Repeat the Add integration process for additional tasks; edit existing tasks through their integration options.
 
-### 3. Add the dashboard card
+### Add the dashboard card
 
 In **Settings → Dashboards → three-dot menu → Resources**, register the following URL as a **JavaScript module** (once only):
 
