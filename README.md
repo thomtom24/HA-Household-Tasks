@@ -2,7 +2,17 @@
 
 A custom Home Assistant integration for tracking recurring household tasks, maintenance and reminders using schedules, calendars and entity conditions.
 
-**Development status:** Experimental. Automated regression testing is in place, but compatibility and live Home Assistant behaviour are not comprehensively validated. Do not rely on this integration as your only reminder for safety-critical, legal or essential maintenance tasks.
+**Release status:** Early release (pre-1.0). Automated Python and JavaScript regression tests, HACS/hassfest validation and real Home Assistant Core runtime tests are in place. Compatibility outside the tested scenarios and versions is not guaranteed. Test in your own installation before relying on it. Do not use this integration as your only reminder for safety-critical, legal or essential maintenance tasks.
+
+[Latest release](https://github.com/thomtom24/HA-Household-Tasks/releases/latest) · [Installation and upgrade guide](docs/installation.md) · [Report an issue](https://github.com/thomtom24/HA-Household-Tasks/issues)
+
+## What can I use it for?
+
+- **Change bedding:** repeat a task a set number of days after it was last completed.
+- **Put the bins out:** open a task the day before a matching collection event in your calendar.
+- **Refill a reservoir:** open a task when an existing level sensor drops below a chosen threshold.
+
+Create each task in the Home Assistant interface, then use one dashboard card to see what needs doing. Home Assistant automations can also use the integration's sensors and completion actions.
 
 ## Features
 
@@ -11,41 +21,78 @@ A custom Home Assistant integration for tracking recurring household tasks, main
 - Complete tasks manually, automatically or using a combination of both.
 - Organise tasks by category and Home Assistant area.
 - View open, overdue and upcoming tasks using the bundled dashboard card.
+- Choose the default time ranges for Upcoming and History independently.
 - Complete eligible scheduled tasks early.
+- Review recent activity, including the account display name for manual and early completions when available.
 - Retain task history across Home Assistant restarts.
+- See detailed diagnostic warnings even for closed tasks without a scheduled due date.
 - Use aggregate task sensors in automations and announcements.
 
-## Installation
+## Quick start
 
-Minimum Home Assistant version: **2025.12.0**. Older releases are not supported by this version. Automated Python regression tests use 2025.12.0. A separate [runtime compatibility workflow](docs/runtime-testing.md) targets 2025.12.0 and 2026.11.3 using official Home Assistant Container images; consult the CI results for the tested commit. Other releases still require compatibility verification.
+**Requirements:** Home Assistant 2025.12.0 or later, HACS installed and configured (recommended), and access to an administrator account for setup. The integration is currently installed as a custom HACS repository, not from the default catalogue.
 
-1. In HACS, add `https://github.com/thomtom24/HA-Household-Tasks` as a custom **Integration** repository.
-2. Download the integration and restart Home Assistant.
-3. Go to **Settings → Devices & services → Add integration → Household Tasks**.
-4. Create your first task. Each task is a separate configuration entry and can be edited through its integration options.
+### 1. Install the integration
 
-The integration is not currently part of the default HACS catalogue.
+1. Open HACS and select **Custom repositories** from its three-dot menu.
+2. Enter `https://github.com/thomtom24/HA-Household-Tasks`, select the **Integration** type and add it.
+3. Find **Household Tasks** in HACS and download the latest stable release.
+4. Restart Home Assistant after the download completes.
 
-### Dashboard card
+### 2. Create your first task
 
-In **Settings → Dashboards → three-dot menu → Resources**, add a JavaScript module resource:
+Go to **Settings → Devices & services → Add integration**, search for **Household Tasks**, and follow the wizard. For example, create a task called Change bedding, select **Time since last completion**, enter 7 days, choose a first due date, and select **Manual completion**.
+
+Each task is a separate configuration entry. Repeat the Add integration process for additional tasks; edit existing tasks through their integration options.
+
+### 3. Add the dashboard card
+
+In **Settings → Dashboards → three-dot menu → Resources**, register the following URL as a **JavaScript module** (once only):
 
 ```text
 /household_tasks/household-tasks-card.js
 ```
 
-Add a manual card to your dashboard:
+Refresh the Home Assistant interface. Edit a dashboard, add a card and search for **Household Tasks**. If it is not listed, select **Manual** and paste:
 
 ```yaml
 type: custom:household-tasks-card
-upcoming_range: "14"  # Optional: "7", "14", "month" or "all" (default)
-history_range: "30"   # Optional: "7", "14", "30" (default), "90" or "all"
 title: Household Tasks
 ```
 
-The dashboard card editor also lets you set the default upcoming range. The range selector on the Upcoming tab temporarily overrides it for the current card session. History has its own configurable default range (last 7, 14, 30 or 90 local calendar days, or all available; default 30 days). It lists available lifecycle events across currently configured tasks (up to 20 exposed events per task), newest first, using Home Assistant’s time zone. The temporary history and upcoming filters are independent. Manual and early completions record the authenticated Home Assistant account display name when identifiable, including calls through the standard completion button. Older entries and actions without a resolvable user show “No user recorded”; automatic completions are identified separately. The warning panel identifies affected tasks and their full warnings on every tab, including closed sensor-triggered tasks without a future due date.
+The card automatically discovers task status sensors. You do not need to list task entities manually.
 
-If you previously registered `/local/household-tasks-card.js`, remove that resource and use the bundled URL above. A legacy copy already installed in your www directory is not automatically replaced by HACS. The repository's legacy file now only imports the bundled card. Refresh your browser after installation or upgrades. The bundled card is served by the integration; you only need to register its resource once.
+For step-by-step instructions, an example task, YAML resource setup, upgrade/rollback guidance and troubleshooting, see the [installation and upgrade guide](docs/installation.md).
+
+### Dashboard options
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `title` | Card heading | Household Tasks |
+| `upcoming_range` | `"7"`, `"14"`, `"month"`, `"all"` | `"all"` |
+| `history_range` | `"7"`, `"14"`, `"30"`, `"90"`, `"all"` | `"30"` |
+
+Use the visual card editor where supported, or set options in YAML:
+
+```yaml
+type: custom:household-tasks-card
+title: Household Tasks
+upcoming_range: "14"
+history_range: "30"
+```
+
+- **Open:** outstanding tasks, including due/overdue information and completion buttons where allowed.
+- **Upcoming:** closed tasks with a known future due date; sensor-triggered tasks may not have one. The time range is a forward-looking filter, not a change to task schedules.
+- **History:** available activity across configured tasks, newest first, filtered by local calendar days or all available history (up to 20 exposed events per task). Manual and early completions include the recorded HA account display name when available. Older records and actions without an identifiable user show “No user recorded”.
+- **Warnings:** affected task names and diagnostic messages appear on every tab, including for closed tasks.
+
+The two dropdowns override their respective configured defaults temporarily and independently. Calendar dates use Home Assistant's configured time zone. The card uses existing stored task history, not a new history database.
+
+If upgrading from an old card installed at `/local/household-tasks-card.js`, remove the old resource registration and register the bundled URL instead. See the [upgrade instructions](docs/installation.md#updating-an-existing-installation).
+
+### Compatibility
+
+Minimum Home Assistant version: **2025.12.0**. Automated Python regression tests use 2025.12.0. The separate [runtime compatibility workflow](docs/runtime-testing.md) targets 2025.12.0 and 2026.11.3 using official Home Assistant Container images. Both runtime versions passed for the dashboard improvements in PR #50. Consult the CI results for the commit or release you are installing; this is not a guarantee for every version or calendar provider.
 
 ## Configuring tasks
 
@@ -91,9 +138,9 @@ An open calendar task remains tied to its original occurrence until its configur
 
 ### Calendar example
 
-To track multiple collection types in a single calendar, create separate tasks using the same calendar entity and different **Calendar event match** filters, such as Rubbish Collection, Recycling Collection and Food Recycling.
+To track multiple collection types in a single calendar, create separate tasks using the same calendar entity and different **Calendar event text filter (optional)** values, such as Rubbish Collection, Recycling Collection and Food Recycling.
 
-Matching is case-insensitive and checks whether the event title contains the configured text. Set **Days before event** to 1 to open the task at midnight on the preceding day. Event-end completion uses the actual event end time.
+Matching is case-insensitive and checks whether the event title contains the configured text. Set **Days before calendar event** to 1 to open the task at midnight on the preceding day. Event-end completion uses the actual event end time.
 
 Calendar reminders support offsets from 0 to 365 days. The scheduler searches at least 90 calendar days ahead, extending the search as necessary to cover the configured offset plus 30 days of upcoming reminders. Responses are cached for five minutes and shared across tasks using the same calendar. Each task retains its own search window. Calendar providers must support retrieval across the requested date range; provider-specific limitations may still affect long-offset reminders.
 
@@ -182,8 +229,8 @@ Home Assistant internal calls without a user ID, such as scheduled automations, 
 - Monthly recurrence is configured as every month in the current editor.
 - The scheduler subscribes only to entities used by active opening and closing rules, sharing one subscription per entity. Configuration changes and unloads refresh these subscriptions; the one-minute evaluation timer remains as a fallback and for scheduled tasks. Background evaluations are coalesced per task: bursts of changes during a running evaluation request a follow-up pass using the current entity states, not a separate queued job for every event. This is a state-based scheduler, not a recorder of brief intermediate state transitions. Shared history writes remain serialized. Direct circular dependencies between task status sensors are rejected in the configuration wizard when their registry identities are known. Aggregate sensors are also unsuitable as task dependencies because their values depend on every task. Existing cycles pause automatic opening and closing while preserving history and allowed manual completion; edit the rules to resolve them. Indirect loops through external templates, automations or helpers are not detected. Unloading a task removes its subscriptions and drains pending work before a reload; deleting it removes its history under the same lock. The periodic timer and registry rename listener are suspended when no tasks are loaded (the timer remains active while a history write is pending) and restored when a task is added. Aggregate sensors remain available for an empty task list.
 - When Home Assistant reports an entity ID rename, the integration attempts to update associated task references automatically.
-- Missing or unavailable dependencies are exposed through `entity_warnings` and `has_entity_warning` on task status sensors. Check these attributes and Home Assistant logs if a task is not behaving as expected.
-- Calendar retrieval, task editing, sensor recovery and timezone edge cases require further testing.
+- Missing or unavailable dependencies are exposed through `entity_warnings` and `has_entity_warning` on task status sensors and summarised by `sensor.household_tasks_errors`. Check the warning panel, the sensor's `summary` attribute and Home Assistant logs if a task is not behaving as expected.
+- Calendar retrieval, task editing, sensor recovery and timezone handling have automated coverage; live provider-specific behaviour and additional edge cases still require testing.
 - Automated Python tests run on GitHub Actions, but passing tests do not establish full runtime compatibility across Home Assistant versions.
 
 ## Privacy and data handling
