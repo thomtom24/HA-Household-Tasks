@@ -81,7 +81,7 @@ async def create_task(hass, name, friendly_name, kind, settings):
     return entry
 
 
-async def check_aggregates(hass, count, latest):
+async def check_aggregates(hass, count, latest, *, error_count=0):
     await wait_state(hass, OPEN_LIST, str(count))
     await wait_state(hass, LATEST, latest)
     from homeassistant.helpers import entity_registry as er
@@ -89,9 +89,10 @@ async def check_aggregates(hass, count, latest):
     registry = er.async_get(hass)
     assert registry.async_get_entity_id("sensor", DOMAIN, "household_tasks_open_names") == OPEN_LIST
     assert registry.async_get_entity_id("sensor", DOMAIN, "household_tasks_latest_open") == LATEST
-    await wait_state(hass, ERRORS, "0")
+    await wait_state(hass, ERRORS, str(error_count))
     assert registry.async_get_entity_id("sensor", DOMAIN, "household_tasks_errors") == ERRORS
-    assert hass.states.get(ERRORS).attributes["errors"] == []
+    assert len(hass.states.get(ERRORS).attributes["errors"]) == error_count
+    assert hass.states.get(ERRORS).attributes["count"] == error_count
     attrs = hass.states.get(OPEN_LIST).attributes
     assert attrs["count"] == count
     assert len(attrs["names"]) == count
@@ -205,7 +206,14 @@ async def restart_phase(hass, directory):
     status, button = entities(hass, entry_id)
     assert (status, button) == (expected["status"], expected["button"])
     await wait_state(hass, status, "open")
-    await check_aggregates(hass, 1, "Runtime task")
+    # The synthetic source is an in-memory state, not a restored entity.
+    # Verify that diagnostics accurately report its absence after restart.
+    assert hass.states.get(SOURCE) is None
+    await check_aggregates(hass, 1, "Runtime task", error_count=1)
+    warning = hass.states.get(ERRORS).attributes["errors"][0]
+    assert warning["entry_id"] == entry_id
+    assert any("entity missing" in message and SOURCE in message
+               for message in warning["warnings"])
     attrs = hass.states.get(status).attributes
     for key in ("last_opened", "last_completed", "history"):
         assert attrs[key] == expected[key], (key, attrs[key], expected[key])
@@ -213,7 +221,8 @@ async def restart_phase(hass, directory):
     # Exercise standard HA entity services with a real authorised user.
     member = next(user for user in await hass.auth.async_get_users() if user.name == "CI member")
     hass.states.async_set(SOURCE, "10")
-    await hass.async_block_till_done()
+    # Wait for the dependency recovery, not merely for the service bus to settle.
+    await check_aggregates(hass, 1, "Runtime task")
     await hass.services.async_call(
         "button", "press", {"entity_id": button}, blocking=True,
         context=Context(user_id=member.id))
