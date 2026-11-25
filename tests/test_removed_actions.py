@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from homeassistant.exceptions import ServiceValidationError
 from custom_components.household_tasks import Engine
 
 NOW = datetime(2026, 1, 14, 12, tzinfo=timezone.utc)
@@ -14,6 +15,7 @@ NOW = datetime(2026, 1, 14, 12, tzinfo=timezone.utc)
 
 def make_engine(kind="numeric"):
     engine = Engine.__new__(Engine)
+    engine.invalid_history = set()
     engine.storage_dirty = False
     engine.storage_failed = False
     engine.storage_retry = None
@@ -46,7 +48,7 @@ def test_removed_actions_are_rejected_without_changes(action):
             await engine.evaluate(entry)
             before = deepcopy(engine.state(entry))
             writes = engine.save.await_count
-            with pytest.raises(ValueError, match="Unsupported task action"):
+            with pytest.raises(ServiceValidationError, match="Unsupported task action"):
                 await engine.act("task", action)
             assert engine.state(entry) == before
             assert engine.save.await_count == writes

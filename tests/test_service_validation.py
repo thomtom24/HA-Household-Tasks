@@ -36,6 +36,7 @@ INVALID_DATA = [
 
 def engine_for_selection():
     engine = Engine.__new__(Engine)
+    engine.invalid_history = set()
     engine.storage_dirty = False
     engine.storage_failed = False
     engine.storage_retry = None

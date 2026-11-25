@@ -12,6 +12,7 @@ from custom_components.household_tasks.const import DOMAIN
 
 def make_engine():
     engine = Engine.__new__(Engine)
+    engine.invalid_history = set()
     engine.storage_dirty = False
     engine.storage_failed = False
     engine.storage_retry = None

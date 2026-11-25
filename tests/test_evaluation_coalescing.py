@@ -5,11 +5,13 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from homeassistant.exceptions import ServiceValidationError
 from custom_components.household_tasks import Engine
 
 
 def make_engine():
     engine = Engine.__new__(Engine)
+    engine.invalid_history = set()
     engine.storage_dirty = False
     engine.storage_failed = False
     engine.storage_retry = None
@@ -184,7 +186,7 @@ def test_manual_action_waiting_for_lock_cannot_mutate_replaced_entry():
             action = asyncio.create_task(engine.act("task", "complete"))
             await asyncio.sleep(0)
             engine.entries["task"] = SimpleNamespace(entry_id="task")
-        with pytest.raises(ValueError, match="changed or unloaded"):
+        with pytest.raises(ServiceValidationError, match="changed or unloaded"):
             await action
         assert not engine.history
         engine.save.assert_not_awaited()

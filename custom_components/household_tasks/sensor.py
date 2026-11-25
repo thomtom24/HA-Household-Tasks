@@ -2,6 +2,7 @@
 from copy import deepcopy
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import callback
+from homeassistant.const import MAX_LENGTH_STATE_STATE, STATE_UNKNOWN
 from homeassistant.util import dt as dt_util
 from .const import DOMAIN
 
@@ -17,6 +18,8 @@ class TaskStatusSensor(SensorEntity):
 
     @property
     def native_value(self):
+        if self.entry.entry_id in self.engine.invalid_history:
+            return STATE_UNKNOWN
         return "open" if self.engine.state(self.entry).get("open") else "closed"
 
     @property
@@ -25,6 +28,11 @@ class TaskStatusSensor(SensorEntity):
         c = self.engine.conf(self.entry)
         completed_early_today = self.engine.completed_early_today(s, dt_util.now())
         warnings = list(s.get("entity_warnings", []))
+        history_invalid = self.entry.entry_id in self.engine.invalid_history
+        if history_invalid:
+            warnings.append("Task history is malformed; task paused. Restore a valid backup with Home Assistant stopped.")
+        if len(c.get("friendly_name") or self.entry.title) > MAX_LENGTH_STATE_STATE:
+            warnings.append("Legacy task name exceeds the Home Assistant state limit. Edit the task name; the original name is retained.")
         if self.engine.storage_failed:
             warnings.append("Task history is not saved to disk. Automatic retry enabled; avoid restarting Home Assistant.")
         if self.entry.entry_id in self.engine.cyclic_entries:
@@ -39,7 +47,8 @@ class TaskStatusSensor(SensorEntity):
             "category": c.get("category"), "area_id": c.get("area_id"),
             "trigger_type": c.get("trigger_type"),
             "close_type": c.get("close_type", "manual"),
-            "manual_completion_allowed": c.get("close_type", "manual") == "manual" or c.get("close_type", "").startswith("manual_or_"),
+            "manual_completion_allowed": not history_invalid and (c.get("close_type", "manual") == "manual" or c.get("close_type", "").startswith("manual_or_")),
+            **({"history_invalid": True} if history_invalid else {}),
             "due": s.get("due"), "due_at_open": s.get("due_at_open"), "last_completed": s.get("last_completed"),
             "last_opened": s.get("last_opened"), "history": s.get("events", [])[-20:],
             "entity_warnings": warnings,

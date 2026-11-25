@@ -90,7 +90,7 @@ def test_shutdown_deferred_write_is_not_read_back():
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("bad", [[], {"a": []}, "invalid"])
+@pytest.mark.parametrize("bad", [[], "invalid"])
 def test_invalid_loaded_history_is_not_overwritten(bad):
     async def scenario():
         engine, _ = fixture()

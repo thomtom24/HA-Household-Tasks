@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, time as datetime_time
 import voluptuous as vol
 from homeassistant.auth.permissions.const import POLICY_CONTROL
 from homeassistant.core import HomeAssistant, callback, CoreState
+from homeassistant.const import MAX_LENGTH_STATE_STATE
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError, Unauthorized, UnknownUser
 from homeassistant.helpers import config_validation as cv, discovery, entity_registry as er
 from homeassistant.components.http import StaticPathConfig
@@ -61,6 +62,54 @@ def parse_dt(value):
     except (ValueError, TypeError, OverflowError):
         return None
 
+def date_entity_value(entity):
+    """Never trust retained attributes of an unavailable/unknown entity."""
+    if entity is None or entity.state in (None, "unknown", "unavailable", ""):
+        return None
+    date = parse_dt(entity.state)
+    if date is not None:
+        return date
+    # Available attribute-based sources (for example a template sensor) are
+    # supported when their primary state is not itself a date.
+    attributes = getattr(entity, "attributes", {})
+    return parse_dt(attributes.get("date") or attributes.get("timestamp"))
+
+
+def valid_history_record(record):
+    """Validate scheduling-critical values without rewriting stored history."""
+    if not isinstance(record, dict):
+        return False
+    if not isinstance(record.get("created"), str) or parse_dt(record["created"]) is None:
+        return False
+    if not isinstance(record.get("open"), bool) or not isinstance(record.get("events"), list):
+        return False
+    for key in ("last_completed", "last_opened", "due", "due_at_open",
+                "calendar_end", "schedule_anchor", "snooze_until"):
+        value = record.get(key)
+        if value is not None and (not isinstance(value, str) or parse_dt(value) is None):
+            return False
+    for key in ("active_token", "completed_token", "next_token"):
+        value = record.get(key)
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            return False
+    for key in ("latched", "pending_rebind", "carried_open", "completed_early_today"):
+        if key in record and not isinstance(record[key], bool):
+            return False
+    signature = record.get("opening_signature")
+    if signature is not None and (not isinstance(signature, dict)
+                                  or not isinstance(signature.get("kind"), str)):
+        return False
+    warnings = record.get("entity_warnings", [])
+    if not isinstance(warnings, list) or any(not isinstance(w, str) for w in warnings):
+        return False
+    return all(isinstance(event, dict)
+               and isinstance(event.get("action"), str)
+               and bool(event["action"].strip())
+               and isinstance(event.get("at"), str)
+               and parse_dt(event["at"]) is not None
+               for event in record["events"])
+
+
 def local_midnight(value):
     """Return local midnight for a date or datetime, independent of its time."""
     if value is None:
@@ -107,6 +156,7 @@ class Engine:
         self.hass = hass
         self.store = Store(hass, 1, "household_tasks.history", private=True, atomic_writes=True)
         self.history = {}
+        self.invalid_history = set()
         self.storage_dirty = False
         self.storage_failed = False
         self.storage_retry = None
@@ -130,10 +180,13 @@ class Engine:
 
     async def start(self):
         loaded = await self.store.async_load()
-        if loaded is not None and (not isinstance(loaded, dict) or
-                                   any(not isinstance(value, dict) for value in loaded.values())):
+        if loaded is not None and not isinstance(loaded, dict):
             raise HomeAssistantError("Invalid household task history; restore from backup")
         self.history = loaded or {}
+        self.invalid_history = {key for key, record in self.history.items()
+                                if not valid_history_record(record)}
+        for key in sorted(self.invalid_history):
+            _LOGGER.error("Malformed household task history for entry %s; task paused. Restore a valid backup.", key)
         for name in ("complete", "complete_early"):
             self.hass.services.async_register(
                 DOMAIN, name, getattr(self, "_service_" + name),
@@ -179,6 +232,9 @@ class Engine:
             pass
 
     def state(self, entry):
+        if entry.entry_id in self.invalid_history:
+            # Safe display projection only; preserve the original record verbatim.
+            return {"open": False, "events": []}
         return self.history.setdefault(entry.entry_id, {
             "created": dt_util.now().isoformat(), "open": False,
             "last_completed": None, "last_opened": None,
@@ -286,7 +342,7 @@ class Engine:
             }
         return {
             "open_names": (len(names), open_attributes),
-            "latest_open": (latest_name, latest_attributes),
+            "latest_open": (latest_name[:MAX_LENGTH_STATE_STATE], latest_attributes),
         }
 
     def publish_open_tasks(self):
@@ -576,14 +632,15 @@ class Engine:
             active = now >= slot
         elif kind == "date_entity":
             entity = self.hass.states.get(c.get("trigger_entity", ""))
-            raw = entity.state if entity else None
-            if entity and raw in ("unknown", "unavailable", ""):
-                raw = entity.attributes.get("date") or entity.attributes.get("timestamp")
-            date = parse_dt(raw)
+            date = date_entity_value(entity)
             if date:
                 due = local_midnight(offset_due_date(date.date(), c["offset_days"]))
                 token = "date:" + date.isoformat()
                 active = now >= due
+            else:
+                # Preserve the last display date, but do not create an occurrence.
+                due = parse_dt(s.get("due_at_open") if s.get("open") else s.get("due"))
+                active = None
         elif kind in ("numeric", "state"):
             entity = self.hass.states.get(c.get("trigger_entity", ""))
             value = entity.state if entity else None
@@ -641,6 +698,9 @@ class Engine:
                 warnings.append(f"{label}: entity missing ({entity_id or 'not configured'})")
             elif state.state in ("unknown", "unavailable", ""):
                 warnings.append(f"{label}: {entity_id} is {state.state or 'empty'}")
+            elif key == "trigger_entity" and c["trigger_type"] == "date_entity":
+                if date_entity_value(state) is None:
+                    warnings.append(f"{label}: {entity_id} has an invalid date or timestamp")
             elif ((key == "trigger_entity" and c["trigger_type"] == "numeric")
                   or (key == "close_entity" and "entity_numeric" in c["close_type"])):
                 if finite_number(state.state) is None:
@@ -670,7 +730,8 @@ class Engine:
         async with self.lock:
             # A queued evaluation may have outlived its original config entry.
             if (self.entries.get(entry.entry_id) is not entry
-                    or entry.entry_id in self.cyclic_entries):
+                    or entry.entry_id in self.cyclic_entries
+                    or entry.entry_id in self.invalid_history):
                 return
             now = dt_util.now()
             s = self.state(entry)
@@ -763,29 +824,31 @@ class Engine:
 
     async def act(self, entry_id, action):
         if action not in ("complete", "complete_early"):
-            raise ValueError("Unsupported task action")
+            raise ServiceValidationError("Unsupported task action")
         entry = self.entries.get(entry_id)
         if not entry:
-            raise ValueError("Unknown task entry")
+            raise ServiceValidationError("Unknown task entry")
         async with self.lock:
             if self.entries.get(entry_id) is not entry:
-                raise ValueError("Task entry changed or unloaded; retry the action")
+                raise ServiceValidationError("Task entry changed or unloaded; retry the action")
+            if entry_id in self.invalid_history:
+                raise HomeAssistantError("Task history is malformed; restore a valid backup before completing this task")
             s, now = self.state(entry), dt_util.now()
             close_type = self.conf(entry)["close_type"]
             if action in ("complete", "complete_early") and not (close_type == "manual" or close_type.startswith("manual_or_")):
-                raise ValueError("This task is configured for automatic completion only")
+                raise ServiceValidationError("This task is configured for automatic completion only")
             if action == "complete_early":
                 # Block duplicate early completions on the same local day.
                 if self.completed_early_today(s, now):
-                    raise ValueError("Task already completed early today")
+                    raise ServiceValidationError("Task already completed early today")
                 kind = self.conf(entry)["trigger_type"]
                 if kind not in ("completion", "weekly", "monthly", "yearly"):
-                    raise ValueError("Early completion is only supported for completion and fixed schedules")
+                    raise ServiceValidationError("Early completion is only supported for completion and fixed schedules")
                 if s.get("open"):
-                    raise ValueError("Task is already open; use normal completion")
+                    raise ServiceValidationError("Task is already open; use normal completion")
                 due, token, active, _ = self.calculate(entry, now)
                 if not due or active or due <= now:
-                    raise ValueError("Task has no future scheduled occurrence to complete early")
+                    raise ServiceValidationError("Task has no future scheduled occurrence to complete early")
                 # Record the future occurrence as satisfied without opening it.
                 # Completion-relative tasks will recalculate from this timestamp.
                 self._finish(s, now, "completed_early")
@@ -978,6 +1041,10 @@ class Engine:
                     changes["close_entity"] = new_id
                 if not changes:
                     continue
+                if entry.entry_id in self.invalid_history:
+                    self.hass.config_entries.async_update_entry(entry, options={**entry.options, **changes})
+                    self.refresh_entity_subscriptions()
+                    continue
                 state = self.state(entry)
                 old_signature = self.opening_signature(entry)
                 changed = False
@@ -1122,4 +1189,5 @@ async def async_remove_entry(hass, entry):
         async with engine.lock:
             if entry.entry_id not in engine.entries:
                 engine.history.pop(entry.entry_id, None)
+                engine.invalid_history.discard(entry.entry_id)
                 await engine.save()

@@ -144,9 +144,8 @@ test('early completion retains confirmation and exact entry identifier', async (
   assert.equal(calls.length, 1);
   assert.equal(calls[0][1], 'complete_early');
   assert.equal(calls[0][2].entry_id, hostile);
-  assert.equal(button.disabled, true);
-  await button.onclick();
-  assert.equal(calls.length, 1);
+  assert.equal(button.disabled, false);
+  assert.ok(!root.innerHTML.includes('data-early="' + encoded + '" disabled'));
 });
 
 test('renamed task entities remain discoverable', () => {
@@ -205,4 +204,61 @@ test('normal completion blocks concurrent double taps and reports errors', async
   await pending;
   assert.equal(first.disabled,false);
   assert.equal(alerts,1);
+});
+
+for (const early of [false,true]) {
+  for (const failure of [false,true]) {
+    test('completion reconciles replacement markup: early=' + early + ' failure=' + failure, async () => {
+      const {card,root,sandbox} = fixture({}, {}, early ? 'closed' : 'open');
+      if (early) {card.filter='upcoming'; card.render();}
+      let finish, reject, calls=0;
+      card._hass.callService = () => {calls++; return new Promise((resolve,r)=>{finish=resolve;reject=r;});};
+      const attr = early ? 'data-early' : 'data-complete';
+      const button={disabled:false};
+      const pending=card.completeTask(button,'task-1',early);
+      assert.ok(root.innerHTML.includes(attr+'="task-1" disabled'));
+      const oldState=card._hass.states['sensor.test_status'];
+      card.hass={...card._hass,states:{'sensor.test_status':{...oldState,attributes:{...oldState.attributes,category:'Changed'}}}};
+      assert.ok(root.innerHTML.includes('Changed'));
+      assert.ok(root.innerHTML.includes(attr+'="task-1" disabled'));
+      await card.completeTask({disabled:false},'task-1',early);
+      assert.equal(calls,1);
+      if(failure) reject(new Error('permission denied')); else finish();
+      await pending;
+      assert.equal(card._pending.size,0);
+      assert.ok(root.innerHTML.includes(attr+'="task-1"'));
+      assert.ok(!root.innerHTML.includes(attr+'="task-1" disabled'));
+    });
+  }
+}
+
+test('independent pending completions do not block or clear one another', async () => {
+  const {card,root}=fixture();
+  const first=card._hass.states['sensor.test_status'];
+  card.hass={...card._hass,states:{'sensor.test_status':first,'sensor.other':{...first,attributes:{...first.attributes,task_entry_id:'task-2'}}}};
+  const resolves={};
+  card._hass.callService=(_,__,data)=>new Promise(resolve=>{resolves[data.entry_id]=resolve;});
+  const a=card.completeTask({disabled:false},'task-1',false);
+  const b=card.completeTask({disabled:false},'task-2',false);
+  assert.equal(card._pending.size,2);
+  resolves['task-1'](); await a;
+  assert.ok(!root.innerHTML.includes('data-complete="task-1" disabled'));
+  assert.ok(root.innerHTML.includes('data-complete="task-2" disabled'));
+  resolves['task-2'](); await b;
+  assert.equal(card._pending.size,0);
+});
+
+test('malformed history remains visible with no completion control', () => {
+  const {root}=fixture({history_invalid:true,manual_completion_allowed:false,entity_warnings:['History malformed']},{},'unknown');
+  assert.ok(root.innerHTML.includes('History malformed'));
+  assert.ok(!root.innerHTML.includes('data-complete='));
+});
+
+test('keyboard focus follows a matching replacement tab', () => {
+  const {card,root,buttons}=fixture();
+  let focused=0;
+  root.activeElement={dataset:{tab:'open'}};
+  buttons['[data-tab]'].push({dataset:{tab:'open'},focus:()=>{focused++;}});
+  card.setConfig({title:'Changed title'});
+  assert.equal(focused,1);
 });

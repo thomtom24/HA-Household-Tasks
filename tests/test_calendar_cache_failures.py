@@ -23,6 +23,7 @@ def response(*events):
 
 def make_engine(rule="manual", offset=0):
     engine = Engine.__new__(Engine)
+    engine.invalid_history = set()
     engine.storage_dirty = False
     engine.storage_failed = False
     engine.storage_retry = None

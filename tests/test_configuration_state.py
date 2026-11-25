@@ -14,6 +14,7 @@ NOW = datetime(2026, 1, 14, 12, tzinfo=timezone.utc)
 
 def make_engine(**config):
     engine = Engine.__new__(Engine)
+    engine.invalid_history = set()
     engine.storage_dirty = False
     engine.storage_failed = False
     engine.storage_retry = None
