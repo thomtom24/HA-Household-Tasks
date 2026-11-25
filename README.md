@@ -17,7 +17,7 @@ A custom Home Assistant integration for tracking recurring household tasks, main
 
 ## Installation
 
-Minimum Home Assistant version: **2025.12.0**. Older releases are not supported by this version. Automated Python regression tests use 2025.12.0; newer versions require compatibility verification.
+Minimum Home Assistant version: **2025.12.0**. Older releases are not supported by this version. Automated Python regression tests use 2025.12.0. A separate [runtime compatibility workflow](docs/runtime-testing.md) targets 2025.12.0 and 2026.11.3 using official Home Assistant Container images; consult the CI results for the tested commit. Other releases still require compatibility verification.
 
 1. In HACS, add `https://github.com/thomtom24/HA-Household-Tasks` as a custom **Integration** repository.
 2. Download the integration and restart Home Assistant.
