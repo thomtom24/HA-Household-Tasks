@@ -28,6 +28,14 @@ Create each task in the Home Assistant interface, then use one dashboard card to
 - See detailed diagnostic warnings even for closed tasks without a scheduled due date.
 - Use aggregate task sensors in automations and announcements.
 
+## Dashboard previews
+
+*AI-generated illustrative examples using fictional tasks and user names. These are mockups based on the dashboard, not exact screenshots of the current release.*
+
+| Open tasks | Task history |
+| --- | --- |
+| ![Illustrative open tasks card](docs/household_tasks_open_card.png) | ![Illustrative task history card](docs/household_tasks_history_card.png) |
+
 ## Quick start
 
 **Requirements:** Home Assistant 2025.12.0 or later and an administrator account for setup.
