@@ -2,7 +2,7 @@
 from copy import deepcopy
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import callback
-from homeassistant.const import MAX_LENGTH_STATE_STATE, STATE_UNKNOWN
+from homeassistant.const import STATE_UNKNOWN
 from homeassistant.util import dt as dt_util
 from .const import DOMAIN
 
@@ -27,18 +27,8 @@ class TaskStatusSensor(SensorEntity):
         s = self.engine.state(self.entry)
         c = self.engine.conf(self.entry)
         completed_early_today = self.engine.completed_early_today(s, dt_util.now())
-        warnings = list(s.get("entity_warnings", []))
+        warnings = self.engine.task_warnings(self.entry)
         history_invalid = self.entry.entry_id in self.engine.invalid_history
-        if history_invalid:
-            warnings.append("Task history is malformed; task paused. Restore a valid backup with Home Assistant stopped.")
-        if len(c.get("friendly_name") or self.entry.title) > MAX_LENGTH_STATE_STATE:
-            warnings.append("Legacy task name exceeds the Home Assistant state limit. Edit the task name; the original name is retained.")
-        if self.engine.storage_failed:
-            warnings.append("Task history is not saved to disk. Automatic retry enabled; avoid restarting Home Assistant.")
-        if self.entry.entry_id in self.engine.cyclic_entries:
-            warnings.append("Circular task dependency detected. Automatic transitions paused; edit the task rules to resolve the loop.")
-        if self.entry.entry_id in self.engine.evaluation_errors:
-            warnings.append("Task evaluation failed; check Home Assistant logs. Automatic retry enabled.")
         return {
             "completed_early_today": completed_early_today,
             "task_entry_id": self.entry.entry_id,
@@ -122,4 +112,6 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
                             "mdi:format-list-checks"),
         AggregateTaskSensor(engine, "latest_open", "Household Tasks Latest Open",
                             "mdi:clipboard-text-clock-outline"),
+        AggregateTaskSensor(engine, "errors", "Household Tasks Errors",
+                            "mdi:alert-circle-outline"),
     ])

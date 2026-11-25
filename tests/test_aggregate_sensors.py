@@ -18,6 +18,7 @@ def engine_with_tasks(*tasks):
     engine.last_aggregate_names = {}
     engine.calendar_requests = {}
     engine.cyclic_entries = set()
+    engine.evaluation_errors = set()
     engine.entries = {}
     engine.history = {}
     engine.aggregate_listeners = []
@@ -35,6 +36,8 @@ def test_empty_snapshot_preserves_legacy_contract():
         "open_names": (0, {"names": [], "tasks": [], "count": 0,
                            "announcement": "There are no outstanding household tasks."}),
         "latest_open": ("none", {"task_name": None, "opened_at": None, "open_count": 0}),
+        "errors": (0, {"household_tasks_error_summary": True, "count": 0,
+                       "errors": [], "summary": "No task errors."}),
     }
 
 
@@ -62,7 +65,7 @@ def test_equal_opening_times_preserve_entry_id_tiebreaker_and_duplicate_names():
     assert engine.aggregate_snapshot()["latest_open"][0] == "Renamed"
 
 
-def test_discovery_creates_two_standard_entities_with_original_ids():
+def test_discovery_creates_three_standard_entities_with_original_ids():
     async def scenario():
         engine = engine_with_tasks()
         hass = SimpleNamespace(data={DOMAIN: engine})
@@ -70,7 +73,11 @@ def test_discovery_creates_two_standard_entities_with_original_ids():
         await async_setup_platform(hass, {}, add, None)
         add.assert_not_called()
         await async_setup_platform(hass, {}, add, {"aggregate_sensors": True})
-        first, second = add.call_args.args[0]
+        first, second, third = add.call_args.args[0]
+        assert isinstance(third, AggregateTaskSensor)
+        assert third.entity_id == "sensor.household_tasks_errors"
+        assert third.unique_id == "household_tasks_errors"
+        assert third.native_value == 0
         assert isinstance(first, AggregateTaskSensor)
         assert isinstance(second, AggregateTaskSensor)
         assert first.entity_id == "sensor.household_tasks_open_names"
@@ -159,3 +166,32 @@ def test_domain_setup_defers_discovery_until_component_loaded():
             await when_setup.call_args.args[2](hass, DOMAIN)
             discover.assert_awaited_once_with(hass, "sensor", DOMAIN, {"aggregate_sensors": True}, config)
     asyncio.run(scenario())
+
+def test_error_aggregate_includes_closed_tasks_and_recovers():
+    engine = engine_with_tasks(("a", "Sensor task", None), ("b", "Healthy", None))
+    entry = engine.entries["a"]
+    warning = "Opening trigger: sensor.example is unavailable"
+    engine.history["a"]["entity_warnings"] = [warning]
+    sensor = AggregateTaskSensor(engine, "errors", "Errors", "mdi:alert")
+    sensor.async_write_ha_state = Mock()
+    asyncio.run(sensor.async_added_to_hass())
+    assert sensor.native_value == 1
+    assert sensor.extra_state_attributes["errors"] == [
+        {"entry_id": "a", "task_name": "Sensor task", "warnings": [warning]}]
+    assert sensor.extra_state_attributes["summary"] == "Sensor task: " + warning
+    engine.history["a"]["entity_warnings"] = []
+    engine.notify(entry.entry_id)
+    assert sensor.native_value == 0
+    assert sensor.extra_state_attributes["errors"] == []
+    engine.evaluation_errors.add("a")
+    engine._notify_evaluation_warning("a")
+    assert sensor.native_value == 1
+    assert "evaluation failed" in sensor.extra_state_attributes["summary"]
+    engine.evaluation_errors.clear()
+    engine._notify_evaluation_warning("a")
+    assert sensor.native_value == 0
+    engine._storage_warning(True)
+    assert sensor.native_value == 2
+    engine._storage_warning(False)
+    assert sensor.native_value == 0
+    asyncio.run(sensor.async_will_remove_from_hass())

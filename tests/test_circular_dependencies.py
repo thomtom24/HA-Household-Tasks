@@ -58,7 +58,7 @@ def test_acyclic_chain_and_stale_fields_are_allowed():
     assert not cyclic_entries(configs, reg)
 
 
-@pytest.mark.parametrize("key", ["open_names", "latest_open"])
+@pytest.mark.parametrize("key", ["open_names", "latest_open", "errors"])
 def test_aggregate_reference_is_circular_before_registration(key):
     assert cyclic_entries({"a": rule("sensor.household_tasks_" + key)}, registry()) == {"a"}
 

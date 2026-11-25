@@ -38,8 +38,11 @@ Add a manual card to your dashboard:
 
 ```yaml
 type: custom:household-tasks-card
+upcoming_range: "14"  # Optional: "7", "14", "month" or "all" (default)
 title: Household Tasks
 ```
+
+The dashboard card editor also lets you set the default upcoming range. The range selector on the Upcoming tab temporarily overrides it for the current card session. History shows the latest 30 recorded lifecycle events across currently configured tasks (up to 20 exposed events per task), newest first, using Home Assistant’s time zone. The warning panel identifies affected tasks and their full warnings on every tab, including closed sensor-triggered tasks without a future due date.
 
 If you previously registered `/local/household-tasks-card.js`, remove that resource and use the bundled URL above. A legacy copy already installed in your www directory is not automatically replaced by HACS. The repository's legacy file now only imports the bundled card. Refresh your browser after installation or upgrades. The bundled card is served by the integration; you only need to register its resource once.
 
@@ -113,7 +116,7 @@ After early completion, the button shows **Completed today** and remains disable
 
 Each task exposes a status sensor with open or closed state, due dates, opening and completion timestamps, recent history and entity warnings.
 
-Two registered aggregate sensors are available. They are managed at integration level, independently of individual tasks, and keep their existing default entity IDs and attributes. Home Assistant's entity registry permits renaming; if an unrelated entity already occupies a default ID, Home Assistant may assign a suffix. Check the actual IDs after upgrading before changing automations:
+Three registered aggregate sensors are available. `sensor.household_tasks_errors` reports the affected task count and exposes complete details in its `errors` and `summary` attributes. They are managed at integration level, independently of individual tasks, and keep their existing default entity IDs and attributes. Home Assistant's entity registry permits renaming; if an unrelated entity already occupies a default ID, Home Assistant may assign a suffix. Check the actual IDs after upgrading before changing automations:
 
 | Entity | Purpose |
 | --- | --- |

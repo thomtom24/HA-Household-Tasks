@@ -304,8 +304,26 @@ class Engine:
         held = self.reloading_entries.get(entry.entry_id)
         return held[1] if held is not None else self.conf(entry).get("friendly_name") or entry.title
 
+    def task_warnings(self, entry):
+        """Share the task status sensor's diagnostics with the aggregate sensor."""
+        s = self.state(entry)
+        c = self.conf(entry)
+        history_invalid = entry.entry_id in self.invalid_history
+        warnings = list(s.get("entity_warnings", []))
+        if history_invalid:
+            warnings.append("Task history is malformed; task paused. Restore a valid backup with Home Assistant stopped.")
+        if len(c.get("friendly_name") or entry.title) > MAX_LENGTH_STATE_STATE:
+            warnings.append("Legacy task name exceeds the Home Assistant state limit. Edit the task name; the original name is retained.")
+        if self.storage_failed:
+            warnings.append("Task history is not saved to disk. Automatic retry enabled; avoid restarting Home Assistant.")
+        if entry.entry_id in self.cyclic_entries:
+            warnings.append("Circular task dependency detected. Automatic transitions paused; edit the task rules to resolve the loop.")
+        if entry.entry_id in self.evaluation_errors:
+            warnings.append("Task evaluation failed; check Home Assistant logs. Automatic retry enabled.")
+        return warnings
+
     def aggregate_snapshot(self):
-        """Return the existing aggregate sensor states and attributes."""
+        """Return domain-level sensor states and attributes."""
         # Keep a task's last published aggregate membership during its options reload.
         open_entries = [e for e in self.entries.values()
                         if e.entry_id not in self.reloading_entries and self.state(e).get("open")]
@@ -340,9 +358,19 @@ class Engine:
                 "opened_at": self.state(latest).get("last_opened"),
                 "open_count": len(open_entries),
             }
+        errors = []
+        entries = {**self.entries, **{key: entry for key, (entry, _) in self.reloading_entries.items()}}
+        for entry in sorted(entries.values(), key=lambda e: (self.aggregate_name(e).casefold(), e.entry_id)):
+            warnings = self.task_warnings(entry)
+            if warnings:
+                errors.append({"entry_id": entry.entry_id, "task_name": self.aggregate_name(entry),
+                               "warnings": warnings})
+        summary = "\n".join(f"{item['task_name']}: {'; '.join(item['warnings'])}" for item in errors)
         return {
             "open_names": (len(names), open_attributes),
             "latest_open": (latest_name[:MAX_LENGTH_STATE_STATE], latest_attributes),
+            "errors": (len(errors), {"household_tasks_error_summary": True, "count": len(errors),
+                                     "errors": errors, "summary": summary or "No task errors."}),
         }
 
     def publish_open_tasks(self):
@@ -362,7 +390,7 @@ class Engine:
 
     def notify(self, entry_id):
         self.publish_open_tasks()
-        self._notify_evaluation_warning(entry_id)
+        self._notify_evaluation_warning(entry_id, publish_aggregates=False)
 
     def _storage_warning(self, failed):
         if self.storage_failed == failed:
@@ -948,8 +976,10 @@ class Engine:
                 self.evaluation_errors.discard(entry_id)
                 self._notify_evaluation_warning(entry_id)
 
-    def _notify_evaluation_warning(self, entry_id):
-        """Refresh task warnings without writing history or aggregate states."""
+    def _notify_evaluation_warning(self, entry_id, *, publish_aggregates=True):
+        """Refresh task warnings and the error aggregate without writing history."""
+        if publish_aggregates and getattr(self, "aggregate_listeners", ()):
+            self.publish_open_tasks()
         for listener in list(self.listeners):
             try:
                 listener(entry_id)

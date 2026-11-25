@@ -262,3 +262,76 @@ test('keyboard focus follows a matching replacement tab', () => {
   card.setConfig({title:'Changed title'});
   assert.equal(focused,1);
 });
+
+test('default range is configurable and temporary selections remain local', () => {
+  const {card,root,range} = fixture({}, {upcoming_range:'14'}, 'closed');
+  card.filter='upcoming';
+  card.render();
+  assert.equal(card.upcomingRange,'14');
+  assert.ok(root.innerHTML.includes('value="14" selected'));
+  range.onchange({target:{value:'7'}});
+  card.setConfig({upcoming_range:'14',title:'New title'});
+  assert.equal(card.upcomingRange,'7');
+  card.setConfig({upcoming_range:'month'});
+  assert.equal(card.upcomingRange,'month');
+  card.setConfig({upcoming_range:'invalid'});
+  assert.equal(card.upcomingRange,'all');
+  assert.ok(card.constructor.getConfigForm().schema.some(field=>field.name==='upcoming_range'));
+});
+
+test('closed sensor-triggered task warnings remain visible on all tabs', () => {
+  const {card,root} = fixture({trigger_type:'numeric', due:null, entity_warnings:[hostile]}, {}, 'closed');
+  for (const tab of ['open','upcoming','history']) {
+    card.filter=tab; card.render();
+    assert.ok(root.innerHTML.includes('1 task needs attention'));
+    assert.ok(root.innerHTML.includes('Test task'));
+    assert.ok(root.innerHTML.includes(encoded));
+    assert.ok(!root.innerHTML.includes('<img'));
+  }
+});
+
+test('renamed diagnostic aggregate supplies full warnings and clears', () => {
+  const {card,root}=fixture({}, {}, 'closed');
+  const state={state:'1',attributes:{household_tasks_error_summary:true,errors:[
+    {task_name:hostile,warnings:['Missing sensor']}] }};
+  card.hass={...card._hass,states:{...card._hass.states,'sensor.renamed_errors':state}};
+  assert.ok(root.innerHTML.includes(encoded));
+  assert.ok(root.innerHTML.includes('Missing sensor'));
+  card.hass={...card._hass,states:{...card._hass.states,'sensor.renamed_errors':{...state,state:'0',attributes:{...state.attributes,errors:[]}}}};
+  assert.ok(!root.innerHTML.includes('task needs attention'));
+});
+
+test('history is newest first, escaped, read-only and omits malformed events', () => {
+  const {card,root}=fixture({history:[
+    {action:'opened',at:'2026-01-01T12:00:00Z'},
+    {action:'completed_early',at:'2026-01-03T12:00:00Z'},
+    {action:hostile,at:'2026-01-02T12:00:00Z'},
+    {action:'broken',at:'invalid'},null]}, {}, 'closed');
+  card.filter='history'; card.render();
+  assert.ok(root.innerHTML.indexOf('Completed early') < root.innerHTML.indexOf(encoded));
+  assert.ok(root.innerHTML.indexOf(encoded) < root.innerHTML.indexOf('Opened'));
+  assert.ok(!root.innerHTML.includes('<img'));
+  assert.ok(!root.innerHTML.includes('broken'));
+  assert.ok(!root.innerHTML.includes('data-early='));
+  assert.ok(!root.innerHTML.includes('data-complete='));
+});
+
+test('upcoming updates patch live regions without replacing the select', () => {
+  const {card,root,range}=fixture({}, {}, 'closed');
+  card.filter='upcoming'; card.render();
+  const regions=Object.fromEntries(['h2','.tabs','.alerts','.task-list'].map(key=>[key,{innerHTML:''}]));
+  const originalQuery=root.querySelector;
+  root.querySelector=selector=>regions[selector] || originalQuery(selector);
+  let writes=0;
+  let markup=root.innerHTML;
+  Object.defineProperty(root,'innerHTML',{get:()=>markup,set:value=>{writes++;markup=value;}});
+  root.activeElement=range;
+  const first=card._hass.states['sensor.test_status'];
+  card.hass={...card._hass,states:{'sensor.test_status':{...first,attributes:{...first.attributes,category:'Changed category'}}}};
+  assert.equal(writes,0);
+  assert.equal(root.querySelector('#upcoming-range'),range);
+  assert.ok(regions['.task-list'].innerHTML.includes('Changed category'));
+  range.onchange({target:{value:'14'}});
+  assert.equal(card.upcomingRange,'14');
+  assert.equal(writes,0);
+});
