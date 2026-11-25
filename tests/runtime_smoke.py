@@ -166,6 +166,7 @@ async def create_phase(hass, directory):
     await check_aggregates(hass, 0, "none")
     completed = hass.states.get(status).attributes["last_completed"]
     assert completed
+    assert hass.states.get(status).attributes["history"][-1]["completed_by"] == member.name
 
     # Rearm through actual state changes. Wait for the closed occurrence's
     # due field to clear before the next change so coalescing cannot skip it.
@@ -217,6 +218,7 @@ async def restart_phase(hass, directory):
         "button", "press", {"entity_id": button}, blocking=True,
         context=Context(user_id=member.id))
     await wait_state(hass, status, "closed")
+    assert hass.states.get(status).attributes["history"][-1]["completed_by"] == member.name
     await check_aggregates(hass, 0, "none")
     result = await hass.config_entries.async_remove(entry_id)
     assert not result["require_restart"], result
@@ -230,10 +232,11 @@ async def restart_phase(hass, directory):
                                   "completion", {"interval_days": 14, "first_due_date": first_due})
     new_status, _ = entities(hass, new_entry.entry_id)
     await wait_state(hass, new_status, "closed")
-    await complete(hass, new_entry.entry_id, early=True)
+    await complete(hass, new_entry.entry_id, Context(user_id=member.id), early=True)
     await wait_for(hass, lambda: bool(hass.states.get(new_status).attributes.get("last_completed")),
                    "early completion persisted")
     assert hass.states.get(new_status).attributes["history"][-1]["action"] == "completed_early"
+    assert hass.states.get(new_status).attributes["history"][-1]["completed_by"] == member.name
     await check_aggregates(hass, 0, "none")
     print("PASS: restart persistence, standard button, last-task removal, recreation, early completion",
           flush=True)

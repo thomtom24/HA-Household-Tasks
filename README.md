@@ -39,10 +39,11 @@ Add a manual card to your dashboard:
 ```yaml
 type: custom:household-tasks-card
 upcoming_range: "14"  # Optional: "7", "14", "month" or "all" (default)
+history_range: "30"   # Optional: "7", "14", "30" (default), "90" or "all"
 title: Household Tasks
 ```
 
-The dashboard card editor also lets you set the default upcoming range. The range selector on the Upcoming tab temporarily overrides it for the current card session. History shows the latest 30 recorded lifecycle events across currently configured tasks (up to 20 exposed events per task), newest first, using Home Assistant’s time zone. The warning panel identifies affected tasks and their full warnings on every tab, including closed sensor-triggered tasks without a future due date.
+The dashboard card editor also lets you set the default upcoming range. The range selector on the Upcoming tab temporarily overrides it for the current card session. History has its own configurable default range (last 7, 14, 30 or 90 local calendar days, or all available; default 30 days). It lists available lifecycle events across currently configured tasks (up to 20 exposed events per task), newest first, using Home Assistant’s time zone. The temporary history and upcoming filters are independent. Manual and early completions record the authenticated Home Assistant account display name when identifiable, including calls through the standard completion button. Older entries and actions without a resolvable user show “No user recorded”; automatic completions are identified separately. The warning panel identifies affected tasks and their full warnings on every tab, including closed sensor-triggered tasks without a future due date.
 
 If you previously registered `/local/household-tasks-card.js`, remove that resource and use the bundled URL above. A legacy copy already installed in your www directory is not automatically replaced by HACS. The repository's legacy file now only imports the bundled card. Refresh your browser after installation or upgrades. The bundled card is served by the integration; you only need to register its resource once.
 
@@ -192,9 +193,9 @@ Household Tasks processes task data inside Home Assistant. It has no integration
 | Data | Location and retention |
 | --- | --- |
 | Task names, categories, areas, entity references and rule settings | Home Assistant config entries, until the entry is removed. |
-| Task lifecycle timestamps, occurrence identifiers, rule signatures and completion records | `.storage/household_tasks.history`; up to the latest 100 lifecycle events per task when new events are recorded. Calendar occurrence identifiers include event titles and start times, and rule signatures may include calendar filters or expected entity states. |
+| Task lifecycle timestamps, occurrence identifiers, rule signatures and completion records (including the authenticated HA account display name when available) | `.storage/household_tasks.history`; up to the latest 100 lifecycle events per task when new events are recorded. Calendar occurrence identifiers include event titles and start times, and rule signatures may include calendar filters or expected entity states. |
 | Calendar results | In-memory cache containing event start/end and summary/message only. Descriptions, locations, attendees and other provider metadata are not retained by the integration's cache. Fresh cache is reused for up to five minutes; during failures a cache may be consulted for display for less than 30 minutes. Expired entries are pruned during scheduler sweeps; unused calendar data is discarded when the last referencing task unloads. Responses invalidated during a request are discarded rather than trusted. |
-| Status and aggregate sensors | Task names, due dates, opening/completion times, recent history (up to 20 events), warnings and announcement text are exposed as Home Assistant entity states/attributes. |
+| Status and aggregate sensors | Task names, due dates, opening/completion times, recent history (up to 20 events, including completion display names where recorded), warnings and announcement text are exposed as Home Assistant entity states/attributes. |
 
 The history store requests Home Assistant's private-file mode on writes. It is not encrypted by the integration, and this does not protect data from administrators, privileged add-ons or backups. Existing file permissions depend on the platform and when the file is next written.
 

@@ -1,7 +1,7 @@
 """Regression tests for custom completion service authorization."""
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import ANY, AsyncMock, Mock, patch
 
 import pytest
 
@@ -62,7 +62,7 @@ def test_authorized_non_admin_can_complete_using_current_registry_identity(actio
         registry.async_get_entity_id.assert_called_once_with("button", DOMAIN, f"{ENTRY_ID}_complete")
         registry.async_get.assert_called_once_with(BUTTON)
         user.permissions.check_entity.assert_called_once_with(BUTTON, POLICY_CONTROL)
-        engine.act.assert_awaited_once_with(ENTRY_ID, action)
+        engine.act.assert_awaited_once_with(ENTRY_ID, action, context=ANY)
 
     asyncio.run(scenario())
 
@@ -104,7 +104,7 @@ def test_admin_and_internal_automation_calls_remain_supported(action, actor):
             engine.hass.auth.async_get_user.assert_not_awaited()
         else:
             engine.hass.auth.async_get_user.assert_awaited_once_with(USER_ID)
-        engine.act.assert_awaited_once_with(ENTRY_ID, action)
+        engine.act.assert_awaited_once_with(ENTRY_ID, action, context=ANY)
 
     asyncio.run(scenario())
 

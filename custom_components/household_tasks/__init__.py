@@ -437,8 +437,11 @@ class Engine:
                                        dt_util.as_utc(now) >= self.storage_retry):
                 await self.save()
 
-    def record(self, s, action, now):
-        s.setdefault("events", []).append({"action": action, "at": now.isoformat()})
+    def record(self, s, action, now, *, completed_by=None):
+        event = {"action": action, "at": now.isoformat()}
+        if completed_by is not None:
+            event["completed_by"] = completed_by
+        s.setdefault("events", []).append(event)
         s["events"] = s["events"][-100:]
 
     @staticmethod
@@ -843,19 +846,33 @@ class Engine:
                     await self.save()
                 self.notify(entry.entry_id)
 
-    def _finish(self, s, now, action):
+    def _finish(self, s, now, action, *, completed_by=None):
         s["open"] = False
         s.pop("pending_rebind", None)
         s.pop("carried_open", None)
         s["last_completed"] = now.isoformat()
-        self.record(s, action, now)
+        self.record(s, action, now, completed_by=completed_by)
 
-    async def act(self, entry_id, action):
+    async def completion_user_name(self, context):
+        """Resolve the trusted HA caller context, not client-supplied data."""
+        if context is None or context.user_id is None:
+            return None
+        try:
+            user = await self.hass.auth.async_get_user(context.user_id)
+        except Exception:
+            # Attribution is optional; do not prevent a valid completion.
+            _LOGGER.warning("Unable to resolve household task completion user")
+            return None
+        name = user.name if user is not None else None
+        return name if isinstance(name, str) and name.strip() else None
+
+    async def act(self, entry_id, action, *, context=None):
         if action not in ("complete", "complete_early"):
             raise ServiceValidationError("Unsupported task action")
         entry = self.entries.get(entry_id)
         if not entry:
             raise ServiceValidationError("Unknown task entry")
+        completed_by = await self.completion_user_name(context)
         async with self.lock:
             if self.entries.get(entry_id) is not entry:
                 raise ServiceValidationError("Task entry changed or unloaded; retry the action")
@@ -879,7 +896,7 @@ class Engine:
                     raise ServiceValidationError("Task has no future scheduled occurrence to complete early")
                 # Record the future occurrence as satisfied without opening it.
                 # Completion-relative tasks will recalculate from this timestamp.
-                self._finish(s, now, "completed_early")
+                self._finish(s, now, "completed_early", completed_by=completed_by)
                 s["completed_token"] = token
                 s["next_token"] = token
                 s["completed_early_today"] = True
@@ -887,7 +904,7 @@ class Engine:
                 if not s.get("open"):
                     return
                 token = s.get("active_token")
-                self._finish(s, now, "completed")
+                self._finish(s, now, "completed", completed_by=completed_by)
                 s["completed_token"] = token
             saved = await self.save()
             self.notify(entry_id)
@@ -944,7 +961,7 @@ class Engine:
     async def _complete_service(self, call, action):
         entry_id = self.find_entry(call)
         await self._authorize_service(entry_id, call.context)
-        await self.act(entry_id, action)
+        await self.act(entry_id, action, context=call.context)
 
     async def _service_complete(self, call):
         await self._complete_service(call, "complete")
