@@ -1,0 +1,31 @@
+name: Home Assistant runtime compatibility
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '43 5 * * 1'
+permissions:
+  contents: read
+jobs:
+  runtime:
+    name: HA ${{ matrix.ha }} runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        ha: ['2025.12.0', '2026.11.3']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Boot real Home Assistant and test task lifecycle
+        env:
+          HA_VERSION: ${{ matrix.ha }}
+        run: |
+          docker run --rm \
+            --mount "type=bind,source=$PWD,target=/workspace,readonly" \
+            --entrypoint python \
+            "ghcr.io/home-assistant/home-assistant:$HA_VERSION" \
+            /workspace/tests/runtime_smoke.py "$HA_VERSION"
