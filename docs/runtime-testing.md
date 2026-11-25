@@ -18,7 +18,11 @@ The smoke test starts actual Home Assistant Core, creates a task through the rea
 configuration flow, checks registry identities and aggregate sensors, changes
 an entity state, exercises authorised and read-only users through the service
 registry, reloads the entry and restarts Core in a new process with the same
-disposable configuration. It checks persistence, the standard completion button,
+disposable configuration. The first process uses the previous helper classification
+and version 0.8.1 in a temporary manifest; the second restores the current service
+manifest. Both use the current implementation, so this specifically tests a
+manifest-only reclassification, not a full historical-release upgrade. The smoke
+test checks entry IDs, entity IDs, history and attribution persistence, the standard completion button,
 removal of the final task, and early completion after creating a new task.
 
 These are tests of a real Core runtime, not a complete installation or upgrade via Marketplace, HACS or Supervisor.
@@ -26,6 +30,8 @@ No credentials or files from a personal Home Assistant installation are needed.
 No ports are published. Do not run against a production configuration.
 
 ## Manual release checks still required
+
+- After upgrading from 0.8.1, confirm Household Tasks appears in the main Integrations list and tasks, entity IDs and history remain available. Core runtime tests do not test the frontend list itself.
 
 - Back up a disposable installation running the previous stable release, install
   via Marketplace (2026.11 or later) or HACS (earlier supported versions), upgrade and restart; verify task history and entity IDs survive.

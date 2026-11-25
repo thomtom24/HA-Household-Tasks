@@ -142,6 +142,8 @@ When upgrading Home Assistant to 2026.11, follow the [official HACS migration gu
 
 Do not remove and re-add tasks simply to update the integration. Removing a task deletes its associated integration history.
 
+From v0.8.2, Household Tasks uses the service integration type, so it should appear in **Settings → Devices & services → Integrations**. Earlier helper-classified releases may be accessed through Helpers or the installed repository page instead. The integration domain and task configuration entries are unchanged; after upgrading and restarting, verify that your existing tasks, entity IDs and history remain intact.
+
 ### Upgrading an older dashboard resource
 
 If you originally used `/local/household-tasks-card.js`, remove that resource registration (or update its URL) and use `/household_tasks/household-tasks-card.js` as the JavaScript module. Keep only one Household Tasks card resource. The old copy in `www` is not automatically replaced by the integration update; you do not need to edit it. Refresh the frontend.
@@ -154,6 +156,7 @@ If an upgrade fails, capture relevant logs and check the release notes first. Re
 
 | Problem | What to check |
 | --- | --- |
+| Installed integration missing from Integrations list | On v0.8.1 or earlier, check Helpers or open the installed repository page. On v0.8.2 or later, check filters, restart after the update and check the logs. Do not delete your tasks. |
 | Integration not in Add integration | Confirm the Marketplace installation or HACS download completed and Home Assistant restarted if required. Check Settings → System → Logs for setup errors; refresh the interface. |
 | Card not found or custom element error | Verify the integration has loaded, resource URL and JavaScript module type are correct, no legacy/duplicate resource is registered, and the dashboard is not in safe mode. Refresh the browser. |
 | Open or Upcoming is empty | Check task status, first due date, trigger conditions and time range. Closed sensor-triggered tasks may have no predictable due date. |

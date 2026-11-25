@@ -2,7 +2,8 @@
 
 No mocked scheduler, auth, config entries, registry, service bus or Store.
 Use two fresh processes with the same disposable config directory to verify
-persistence across a genuine Core restart. Not collected by pytest.
+persistence across a genuine Core restart with the old helper manifest
+reclassified as a service. Not collected by pytest.
 """
 from __future__ import annotations
 
@@ -268,6 +269,8 @@ async def run_phase(directory, phase, version):
     try:
         assert await bootstrap.async_from_config_dict(config, hass) is not None
         await hass.async_start()
+        integration = await loader.async_get_integration(hass, DOMAIN)
+        assert integration.integration_type == ("helper" if phase == "create" else "service")
         if phase == "create":
             await create_phase(hass, directory)
         else:
@@ -286,9 +289,21 @@ def main():
         source = Path(__file__).resolve().parents[1] / "custom_components"
         shutil.copytree(source, directory / "custom_components")
         (directory / "configuration.yaml").write_text("homeassistant:\nhttp:\n", encoding="utf-8")
-        for phase in ("create", "restart"):
-            subprocess.run([sys.executable, __file__, version, temp, phase],
-                           check=True, timeout=240)
+        manifest_path = directory / "custom_components" / DOMAIN / "manifest.json"
+        current_manifest = manifest_path.read_text(encoding="utf-8")
+        previous_manifest = json.loads(current_manifest)
+        assert previous_manifest["integration_type"] == "service"
+        # Exercise the manifest-only classification change in an existing
+        # installation. Both phases use the current implementation; this
+        # is not a full installation of the historical release via HACS.
+        previous_manifest["integration_type"] = "helper"
+        previous_manifest["version"] = "0.8.1"
+        manifest_path.write_text(json.dumps(previous_manifest), encoding="utf-8")
+        subprocess.run([sys.executable, __file__, version, temp, "create"],
+                       check=True, timeout=240)
+        manifest_path.write_text(current_manifest, encoding="utf-8")
+        subprocess.run([sys.executable, __file__, version, temp, "restart"],
+                       check=True, timeout=240)
     print(f"PASS: Home Assistant {version} runtime smoke test", flush=True)
 
 
