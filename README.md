@@ -34,7 +34,7 @@ Create each task in the Home Assistant interface, then use one dashboard card to
 
 | Open tasks | Task history |
 | --- | --- |
-| ![Illustrative open tasks card](docs/screenshots/household_tasks_open_card.png) | ![Illustrative task history card](docs/screenshots/household_tasks_history_card.png) |
+| ![Illustrative open tasks card](docs/household_tasks_open_card.png) | ![Illustrative task history card](docs/household_tasks_history_card.png) |
 
 ## Quick start
 
