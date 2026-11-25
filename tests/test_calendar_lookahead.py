@@ -28,6 +28,7 @@ def make_entry(name, offset=None, **settings):
 
 def make_engine(*entries, events=()):
     engine = Engine.__new__(Engine)
+    engine.invalid_history = set()
     engine.storage_dirty = False
     engine.storage_failed = False
     engine.storage_retry = None

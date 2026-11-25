@@ -162,6 +162,10 @@ Home Assistant internal calls without a user ID, such as scheduled automations, 
 
 ## Troubleshooting and limitations
 
+- Date-entity triggers do not open tasks from retained attributes while an entity is unknown, unavailable or empty. Available entities may provide a valid date/timestamp in their primary state or in a `date`/`timestamp` attribute. Invalid readings produce a warning; independent closing rules still apply.
+- Malformed individual history records are retained unchanged and affected tasks are paused (including manual completion). The status sensor reports an unknown state and a warning. Healthy tasks continue to operate. Back up your installation and restore valid history from a backup with Home Assistant stopped; do not delete/recreate the task unless you intend to discard its history. Invalid root history still prevents setup. No automatic repair or migration is performed.
+- Legacy names longer than the Home Assistant state limit are shortened only in the latest-open sensor state; its `task_name` attribute and announcement names retain the full value. Edit excessively long names to resolve the warning.
+
 - The dashboard resource must be added manually once.
 - Weekly recurrence supports one weekday per task.
 - Monthly recurrence is configured as every month in the current editor.
@@ -192,7 +196,7 @@ Entity visibility is governed by Home Assistant. The card is not a separate priv
 
 Status and aggregate entities suppress unchanged payload updates, reducing unnecessary state-machine work without excluding attributes from Recorder. Options reloads retain aggregate membership until the reload finishes to avoid a transient disappearance/reappearance of outstanding tasks. A genuine task name change or latest-task change can still trigger existing state-based automations. The integration does not automatically change Recorder settings, purge backups or migrate existing occurrence identifiers. Existing automations and task scheduling identities are preserved.
 
-For bug reports or feature requests, use [GitHub Issues](https://github.com/thomtom24/HA-Household-Tasks/issues). Release-specific changes are available through [GitHub Releases](https://github.com/thomtom24/HA-Household-Tasks/releases) and repository history.
+For security issues, follow the [security policy](SECURITY.md). For ordinary bug reports or feature requests, use [GitHub Issues](https://github.com/thomtom24/HA-Household-Tasks/issues). Release-specific changes are available through [GitHub Releases](https://github.com/thomtom24/HA-Household-Tasks/releases) and repository history.
 
 ## Development workflow security
 

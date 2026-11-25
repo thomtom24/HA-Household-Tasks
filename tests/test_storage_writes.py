@@ -16,6 +16,7 @@ from custom_components.household_tasks import Engine
 def test_active_trigger_does_not_rewrite_history(kind, reading, inactive):
     async def scenario():
         engine = Engine.__new__(Engine)
+        engine.invalid_history = set()
         engine.storage_dirty = False
         engine.storage_failed = False
         engine.storage_retry = None
@@ -76,6 +77,7 @@ def test_active_trigger_does_not_rewrite_history(kind, reading, inactive):
 def test_new_inactive_task_persists_creation_baseline():
     async def scenario():
         engine = Engine.__new__(Engine)
+        engine.invalid_history = set()
         engine.storage_dirty = False
         engine.storage_failed = False
         engine.storage_retry = None

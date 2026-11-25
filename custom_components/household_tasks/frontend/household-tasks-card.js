@@ -17,13 +17,16 @@ class HouseholdTasksCard extends HTMLElement {
     if (this._pending.has(entry) || button.disabled) return;
     this._pending.add(entry);
     button.disabled = true;
+    this.render();
     try {
       await this._hass.callService('household_tasks', early ? 'complete_early' : 'complete', {entry_id:entry});
     } catch (error) {
       globalThis.alert('Could not complete task: ' + (error?.message || String(error)));
-      button.disabled = false;
     } finally {
       this._pending.delete(entry);
+      // The original button may have been replaced during the await.
+      button.disabled = false;
+      this.render();
     }
   }
   getCardSize() { return 5; }
@@ -33,9 +36,9 @@ class HouseholdTasksCard extends HTMLElement {
     this.filter = validTab(this.filter);
     this.upcomingRange = validRange(this.upcomingRange);
     const tasks = Object.entries(this._hass.states)
-      .filter(([id,s]) => id.startsWith('sensor.') && asText(s?.attributes?.task_entry_id).trim() && ['open','closed'].includes(s.state))
+      .filter(([id,s]) => id.startsWith('sensor.') && asText(s?.attributes?.task_entry_id).trim() && (['open','closed'].includes(s.state) || s.attributes.history_invalid === true))
       .map(([id,s]) => ({id, name:asText(s.attributes.task_name) || (asText(s.attributes.friendly_name) || id).replace(/\s+status$/i, ''), due:s.attributes.due, dueAtOpen:s.attributes.due_at_open, opened:s.attributes.last_opened,
-        entry:s.attributes.task_entry_id, state:s.state, category:asText(s.attributes.category), triggerType:s.attributes.trigger_type,
+        entry:s.attributes.task_entry_id, state:s.state, historyInvalid:s.attributes.history_invalid === true, category:asText(s.attributes.category), triggerType:s.attributes.trigger_type,
         warnings:Array.isArray(s.attributes.entity_warnings)?s.attributes.entity_warnings.filter(warning => typeof warning === 'string'):[],
         completedEarlyToday:s.attributes.completed_early_today === true,
         manualAllowed:s.attributes.manual_completion_allowed === true || (s.attributes.manual_completion_allowed == null && (!s.attributes.close_type || s.attributes.close_type === "manual" || asText(s.attributes.close_type).startsWith("manual_or_")))}));
@@ -68,7 +71,7 @@ class HouseholdTasksCard extends HTMLElement {
       return !Number.isNaN(due.getTime()) && due > now &&
         (this.upcomingRange === 'all' || dayNumber(due) <= endOfRange.getTime()/86400000);
     }).sort((a,b) => new Date(a.due) - new Date(b.due));
-    const visible = this.filter === 'upcoming' ? upcoming : tasks.filter(t=>t.state === 'open');
+    const visible = this.filter === 'upcoming' ? upcoming : tasks.filter(t=>t.state === 'open' || t.historyInvalid);
     const formatDateTime = date => {
       const locale = this._hass.locale || {};
 
@@ -137,6 +140,10 @@ class HouseholdTasksCard extends HTMLElement {
       .range-filter select{background:var(--card-background-color);color:var(--primary-text-color);border:1px solid var(--divider-color);border-radius:8px;padding:7px 10px;font:inherit}
       .task button{flex-shrink:0;min-height:44px}button:focus-visible,select:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}@media(max-width:420px){.task{flex-wrap:wrap}.task button{width:100%}}.task button:disabled{opacity:.55;cursor:default}.health-alert,.warning{color:var(--warning-color,#c77b00)}.health-alert{margin:8px 0;padding:8px;border:1px solid currentColor;border-radius:8px;font-size:13px}small{display:block;color:var(--secondary-text-color);margin-top:4px}</style>`;
     if (markup === this._lastMarkup) return;
+    const focused = this.shadowRoot.activeElement;
+    const focusKey = focused?.dataset ? ['tab','complete','early'].find(key => focused.dataset[key] !== undefined) : undefined;
+    const focusValue = focusKey ? focused.dataset[focusKey] : undefined;
+    const rangeFocused = focused?.id === 'upcoming-range';
     this._lastMarkup = markup;
     this.shadowRoot.innerHTML = markup;
     this.shadowRoot.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{this.filter=validTab(b.dataset.tab);this.render()});
@@ -156,6 +163,11 @@ class HouseholdTasksCard extends HTMLElement {
         await this.completeTask(button,button.dataset.early,true);
       };
     });
+    // Match dataset values in JavaScript, never interpolate task IDs into selectors.
+    const replacement = rangeFocused ? rangeSelector : focusKey ?
+      Array.from(this.shadowRoot.querySelectorAll('[data-' + focusKey + ']'))
+        .find(element => element.dataset[focusKey] === focusValue) : null;
+    if (replacement && !replacement.disabled) replacement.focus?.({preventScroll:true});
   }
 }
 if (!customElements.get?.('household-tasks-card')) customElements.define('household-tasks-card',HouseholdTasksCard);

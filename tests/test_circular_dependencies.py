@@ -105,6 +105,7 @@ def test_wizard_allows_edit_that_breaks_existing_cycle():
 
 def engine_fixture():
     engine = Engine.__new__(Engine)
+    engine.invalid_history = set()
     engine.storage_dirty = False
     engine.storage_failed = False
     engine.storage_retry = None

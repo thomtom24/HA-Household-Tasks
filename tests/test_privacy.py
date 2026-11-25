@@ -45,6 +45,7 @@ def test_projection_preserves_missing_end_and_empty_title():
 def test_routine_error_logs_do_not_include_exception_payload(caplog, failure):
     async def scenario():
         engine = Engine.__new__(Engine)
+        engine.invalid_history = set()
         engine.storage_dirty = False
         engine.storage_failed = False
         engine.storage_retry = None
@@ -74,6 +75,7 @@ def test_routine_error_logs_do_not_include_exception_payload(caplog, failure):
 def test_debug_logging_can_still_show_traceback(caplog):
     async def scenario():
         engine = Engine.__new__(Engine)
+        engine.invalid_history = set()
         engine.storage_dirty = False
         engine.storage_failed = False
         engine.storage_retry = None

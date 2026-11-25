@@ -10,6 +10,7 @@ from custom_components.household_tasks.sensor import AggregateTaskSensor, TaskSt
 
 def engine_with_tasks(*tasks):
     engine = Engine.__new__(Engine)
+    engine.invalid_history = set()
     engine.storage_dirty = False
     engine.storage_failed = False
     engine.storage_retry = None
