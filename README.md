@@ -116,12 +116,13 @@ After early completion, the button shows **Completed today** and remains disable
 
 Each task exposes a status sensor with open or closed state, due dates, opening and completion timestamps, recent history and entity warnings.
 
-Three registered aggregate sensors are available. `sensor.household_tasks_errors` reports the affected task count and exposes complete details in its `errors` and `summary` attributes. They are managed at integration level, independently of individual tasks, and keep their existing default entity IDs and attributes. Home Assistant's entity registry permits renaming; if an unrelated entity already occupies a default ID, Home Assistant may assign a suffix. Check the actual IDs after upgrading before changing automations:
+Three registered aggregate sensors are available. They are managed at integration level, independently of individual tasks, and keep their existing default entity IDs and attributes. Home Assistant's entity registry permits renaming; if an unrelated entity already occupies a default ID, Home Assistant may assign a suffix. Check the actual IDs after upgrading before changing automations:
 
 | Entity | Purpose |
 | --- | --- |
 | `sensor.household_tasks_open_names` | Number of outstanding tasks, with `names`, `tasks`, `count` and `announcement` attributes. |
 | `sensor.household_tasks_latest_open` | Friendly name of the most recently opened outstanding task, or `none`. Includes `task_name`, `opened_at` and `open_count`. |
+| `sensor.household_tasks_errors` | Number of tasks needing attention (0 when healthy), including closed tasks. Includes `errors` (task names, entry IDs and individual warnings), `summary` (full readable text) and `count`. The numeric state avoids truncating warnings at the HA state length limit. |
 
 Use the announcement text in an automation or voice assistant:
 
@@ -133,6 +134,12 @@ Retrieve the list of outstanding task names:
 
 ```jinja2
 {{ state_attr('sensor.household_tasks_open_names', 'names') }}
+```
+
+Retrieve all diagnostic messages for notifications without a custom template sensor:
+
+```jinja2
+{{ state_attr('sensor.household_tasks_errors', 'summary') }}
 ```
 
 A change to the latest-open sensor does not necessarily mean a new task opened: it may also mean the newest task was completed. Consider the `open_count` and `opened_at` attributes when building notifications.

@@ -19,6 +19,7 @@ DOMAIN = "household_tasks"
 SOURCE = "sensor.runtime_test_source"
 OPEN_LIST = "sensor.household_tasks_open_names"
 LATEST = "sensor.household_tasks_latest_open"
+ERRORS = "sensor.household_tasks_errors"
 
 
 async def wait_for(hass, predicate, description):
@@ -88,6 +89,9 @@ async def check_aggregates(hass, count, latest):
     registry = er.async_get(hass)
     assert registry.async_get_entity_id("sensor", DOMAIN, "household_tasks_open_names") == OPEN_LIST
     assert registry.async_get_entity_id("sensor", DOMAIN, "household_tasks_latest_open") == LATEST
+    await wait_state(hass, ERRORS, "0")
+    assert registry.async_get_entity_id("sensor", DOMAIN, "household_tasks_errors") == ERRORS
+    assert hass.states.get(ERRORS).attributes["errors"] == []
     attrs = hass.states.get(OPEN_LIST).attributes
     assert attrs["count"] == count
     assert len(attrs["names"]) == count
@@ -117,6 +121,19 @@ async def create_phase(hass, directory):
     status, button = entities(hass, entry.entry_id)
     await wait_state(hass, status, "closed")
     await check_aggregates(hass, 0, "none")
+
+    # A closed sensor-triggered task must still report a broken dependency.
+    hass.states.async_set(SOURCE, "unavailable")
+    await wait_state(hass, ERRORS, "1")
+    assert state_is(hass, status, "closed")
+    warning = hass.states.get(ERRORS).attributes["errors"][0]
+    assert warning["task_name"] == "Runtime task"
+    assert warning["entry_id"] == entry.entry_id
+    assert SOURCE in hass.states.get(ERRORS).attributes["summary"]
+    assert "unavailable" in warning["warnings"][0]
+    hass.states.async_set(SOURCE, "0")
+    await wait_state(hass, ERRORS, "0")
+    assert hass.states.get(ERRORS).attributes["errors"] == []
 
     # Real state bus and targeted subscription, not a call to Engine.evaluate.
     hass.states.async_set(SOURCE, "10")
