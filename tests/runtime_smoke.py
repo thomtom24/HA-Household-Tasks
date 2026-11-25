@@ -106,6 +106,7 @@ async def complete(hass, entry_id, context=None, *, early=False):
 async def create_phase(hass, directory):
     from homeassistant.auth.const import GROUP_ID_ADMIN, GROUP_ID_READ_ONLY, GROUP_ID_USER
     from homeassistant.core import Context
+    import voluptuous as vol
     from homeassistant.exceptions import Unauthorized, ServiceValidationError
 
     assert not hass.config_entries.async_entries(DOMAIN)
@@ -137,8 +138,8 @@ async def create_phase(hass, directory):
 
     try:
         await hass.services.async_call(DOMAIN, "complete", {}, blocking=True)
-    except ServiceValidationError:
-        pass
+    except (vol.Invalid, ServiceValidationError) as err:
+        assert "Specify exactly one of entry_id or task" in str(err), str(err)
     else:
         raise AssertionError("Missing service selector was accepted")
     assert state_is(hass, status, "open")
@@ -233,7 +234,7 @@ async def run_phase(directory, phase, version):
         "homeassistant": {"name": "Household Tasks CI", "time_zone": "UTC",
                           "latitude": 0, "longitude": 0, "elevation": 0,
                           "unit_system": "metric", "currency": "GBP", "country": "GB"},
-        "http": {"server_host": "127.0.0.1", "server_port": 8123},
+        "http": {"server_port": 8123},
     }
     try:
         assert await bootstrap.async_from_config_dict(config, hass) is not None
