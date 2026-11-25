@@ -59,7 +59,7 @@ See the [installation guide](docs/installation.md) for detailed instructions for
 
 If installation opens the setup wizard, continue there. Otherwise go to **Settings → Devices & services → Add integration**, search for **Household Tasks**, and follow the wizard. For example, create a task called Change bedding, select **Time since last completion**, enter 7 days, choose a first due date, and select **Manual completion**.
 
-Each task is a separate configuration entry. Repeat the Add integration process for additional tasks; edit existing tasks through their integration options.
+Each task is a separate configuration entry. Repeat the Add integration process for additional tasks; edit existing tasks through their integration options. From v0.8.2, Household Tasks is classified as a service and should appear in the main Integrations list. In v0.8.1 and earlier helper-classified versions, it may instead be accessed through Helpers or the installed repository page.
 
 ### Add the dashboard card
 
