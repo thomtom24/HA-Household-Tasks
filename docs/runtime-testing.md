@@ -21,15 +21,15 @@ registry, reloads the entry and restarts Core in a new process with the same
 disposable configuration. It checks persistence, the standard completion button,
 removal of the final task, and early completion after creating a new task.
 
-These are tests of a real Core runtime, not a complete HACS/Supervisor installation.
+These are tests of a real Core runtime, not a complete installation or upgrade via Marketplace, HACS or Supervisor.
 No credentials or files from a personal Home Assistant installation are needed.
 No ports are published. Do not run against a production configuration.
 
 ## Manual release checks still required
 
 - Back up a disposable installation running the previous stable release, install
-  via HACS, upgrade and restart; verify task history and entity IDs survive.
-- Perform a fresh HACS installation, configure the bundled dashboard resource
+  via Marketplace (2026.11 or later) or HACS (earlier supported versions), upgrade and restart; verify task history and entity IDs survive.
+- Perform a fresh installation through each applicable installer, configure the bundled dashboard resource
   and verify it on desktop and mobile browsers.
 - Check existing announcements and automations, provider-specific calendars,
   entity rename, optional settings and real service permissions via the UI.
