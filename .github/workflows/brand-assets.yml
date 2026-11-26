@@ -4,10 +4,12 @@ on:
     branches: [main]
     paths:
       - branding/icon.svg
+      - custom_components/household_tasks/brand/**
       - .github/workflows/brand-assets.yml
   pull_request:
     paths:
       - branding/icon.svg
+      - custom_components/household_tasks/brand/**
       - .github/workflows/brand-assets.yml
   workflow_dispatch:
 permissions:
@@ -29,7 +31,7 @@ jobs:
           from pathlib import Path
           folder = Path("custom_components/household_tasks/brand")
           folder.mkdir(parents=True, exist_ok=True)
-          for name, size in (("icon.png",256), ("icon@2x.png",512), ("logo.png",256)):
+          for name, size in (("icon.png",256), ("icon@2x.png",512)):
               cairosvg.svg2png(url="branding/icon.svg", write_to=str(folder/name), output_width=size, output_height=size)
           PY
       - name: Upload generated assets for review
